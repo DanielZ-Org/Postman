@@ -9,14 +9,14 @@ import (
 )
 
 func TestNewRouterBuildsWithoutExternalServices(t *testing.T) {
-	handler := NewRouter(game.NewClock())
+	handler := NewRouter(game.NewInitialState())
 	if handler == nil {
 		t.Fatal("NewRouter returned nil handler")
 	}
 }
 
 func TestUnimplementedRouteStaysUnderV1Boundary(t *testing.T) {
-	router := NewRouter(game.NewClock())
+	router := NewRouter(game.NewInitialState())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/game", nil)
 	w := httptest.NewRecorder()

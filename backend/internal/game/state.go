@@ -92,6 +92,15 @@ func (c *Clock) Snapshot() ClockSnapshot {
 	}
 }
 
+// Now returns the authoritative current game time. It takes an internal read lock and releases it
+// before returning; no wall clock is used. This lets callers (e.g., office selection) derive
+// deterministic values from the exact fictional instant without holding a lock themselves.
+func (c *Clock) Now() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now
+}
+
 // SetPaused sets the paused state (true pauses advancement, false resumes). It changes
 // only the paused flag; speed and game time are preserved. Safe under concurrent access.
 func (c *Clock) SetPaused(paused bool) {
@@ -221,15 +230,48 @@ func daysUntilNext(t time.Time, target time.Weekday) int {
 	return (int(target) - int(t.Weekday()) + 7) % 7
 }
 
-// GameState is the minimal in-memory game state created at backend startup when no
-// persisted game exists yet. It owns exactly one authoritative clock; later Acts will
-// extend it with player, office and other domains.
+// StartingCash is the canonical starting player cash for a new M1 game (SPEC 4.3): £1000,
+// represented as integer pounds.
+const StartingCash = 1000
+
+// GameState is the authoritative in-memory game state created at backend startup when no
+// persisted game exists yet. It owns exactly one authoritative clock plus the selected office
+// (initially none), the current cash balance, and a minimal in-memory finance transaction list.
+// All mutable fields are guarded by mu; use *GameState (a reference) everywhere — never copy it.
 type GameState struct {
-	Clock *Clock
+	mu             sync.Mutex     // guards selectedOffice/cash/transactions; never copy a GameState by value
+	Clock          *Clock         // authoritative clock (owns its own lock); see SelectOffice for lock ordering
+	selectedOffice *RuntimeOffice // nil until an office is selected (one-time in M1)
+	cash           int            // authoritative cash balance, integer pounds (starts at StartingCash)
+	transactions   []Transaction  // minimal in-memory finance records (M1D: office down payments only)
 }
 
-// NewInitialState returns the default M1 game state seeded from the canonical start time
-// defined by SPEC (SPEC 2.1).
+// NewInitialState returns the default M1 game state seeded from the canonical start time and
+// starting cash defined by SPEC.
 func NewInitialState() *GameState {
-	return &GameState{Clock: NewClock()}
+	return &GameState{Clock: NewClock(), cash: StartingCash}
+}
+
+// SelectedOffice returns the currently selected office, or nil if none has been selected yet.
+func (s *GameState) SelectedOffice() *RuntimeOffice {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.selectedOffice
+}
+
+// Cash returns the current authoritative cash balance in integer pounds.
+func (s *GameState) Cash() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cash
+}
+
+// Transactions returns a copy of the finance transaction list; callers cannot mutate the
+// authoritative collection through the returned slice.
+func (s *GameState) Transactions() []Transaction {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Transaction, len(s.transactions))
+	copy(out, s.transactions)
+	return out
 }

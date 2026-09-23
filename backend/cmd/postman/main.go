@@ -21,13 +21,13 @@ func main() {
 		log.Fatalf("[postman] refusing to bind %q: initial deployment must listen on localhost only", addr)
 	}
 
-	// Bootstrap the authoritative in-memory game state (M1B: the clock). The API
-	// layer only reads it; it never owns mutable game state itself.
+	// Bootstrap the authoritative in-memory game state (clock, selected office, cash and a minimal
+	// finance transaction list). The API layer reads and mutates it by reference; it never owns a copy.
 	state := game.NewInitialState()
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(state.Clock),
+		Handler:           api.NewRouter(state),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -13,9 +13,9 @@ import (
 
 // newTestRouter builds a fresh router with an isolated authoritative clock so each test
 // starts from the canonical initial state.
-func newTestRouter() (http.Handler, *game.Clock) {
-	clock := game.NewClock()
-	return NewRouter(clock), clock
+func newTestRouter() (http.Handler, *game.GameState) {
+	state := game.NewInitialState()
+	return NewRouter(state), state
 }
 
 // doRequest runs method+path against the handler with the given raw body and returns the recorder.
@@ -280,15 +280,15 @@ func TestSpeedEndpoint(t *testing.T) {
 	})
 
 	t.Run("rejected mutation leaves state unchanged", func(t *testing.T) {
-		h, clock := newTestRouter()
-		if err := clock.SetSpeed(2); err != nil {
+		h, state := newTestRouter()
+		if err := state.Clock.SetSpeed(2); err != nil {
 			t.Fatalf("setup SetSpeed(2): %v", err)
 		}
 		rec := doRequest(t, h, http.MethodPost, "/api/v1/clock/speed", `{"speed":9}`)
 		if rec.Code != http.StatusBadRequest || errorCode(t, rec.Body.Bytes()) != "INVALID_CLOCK_SPEED" {
 			t.Fatalf("status=%d code=%s, want 400 INVALID_CLOCK_SPEED; body=%s", rec.Code, errorCodeSafe(rec), rec.Body.String())
 		}
-		if got := clock.Snapshot().Speed; got != 2 {
+		if got := state.Clock.Snapshot().Speed; got != 2 {
 			t.Errorf("speed = %d after rejected mutation, want previous value 2 preserved", got)
 		}
 	})
@@ -376,12 +376,12 @@ func TestUnsupportedMethodsReturnJSONMethodNotAllowed(t *testing.T) {
 }
 
 func TestMethodNotAllowedDoesNotMutateState(t *testing.T) {
-	h, clock := newTestRouter()
+	h, state := newTestRouter()
 	rec := doRequest(t, h, http.MethodGet, "/api/v1/clock/speed", "")
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405; body=%s", rec.Code, rec.Body.String())
 	}
-	if got := clock.Snapshot().Speed; got != 1 {
+	if got := state.Clock.Snapshot().Speed; got != 1 {
 		t.Errorf("speed = %d after a rejected method, want unchanged 1", got)
 	}
 }
