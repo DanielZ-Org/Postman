@@ -268,6 +268,113 @@ Decorations, equipment upgrades and capacity upgrades are **DEFERRED**, but the 
 
 The precise recovery/grace-period UX is **OPEN**.
 
+## 4.3 Office selection (M1)
+
+### Selectable offices
+
+The M1 selectable office set is exactly two, in this deterministic order:
+
+| ID | Type | Down payment | Weekly rent | Rent prepaid | Storage base/current at selection | Storage max | Employee capacity | Bicycle capacity | Vehicle capacity | Accepted package sizes initially |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `office-small-01` | small | £350 | £50 | 4 weeks | 100 | 150 | 5 | 5 | 1 | small, medium |
+| `office-large-01` | large | £450 | £75 | 4 weeks | 150 | 250 | 7 | 7 | 2 | small, medium |
+
+There are no other selectable offices in M1. Office definitions are immutable backend-owned catalogue data; clients cannot alter them.
+
+### Starting cash
+
+Canonical starting player cash is **£1000**. Money is represented using **integer pounds** for M1 (no floating point; pennies/pence are not yet required). The authoritative cash balance belongs to backend game state.
+
+### `GET /api/v1/offices`
+
+Returns the office **options/catalogue definitions** (not mutable selected-office state), with HTTP `200 OK`, `Content-Type: application/json`, under a single `offices` wrapper in deterministic order (`office-small-01` then `office-large-01`). Catalogue objects intentionally do NOT contain runtime fields (`is_head_office`, `next_rent_due`, `storage.current`, `storage.used`, `contract_status`, `missed_rent_payments`) — those are created when an office is selected. GET is read-only.
+
+```json
+{
+  "offices": [
+    {
+      "id": "office-small-01",
+      "type": "small",
+      "down_payment": 350,
+      "weekly_rent": 50,
+      "rent_prepaid_weeks": 4,
+      "storage": { "base": 100, "max": 150 },
+      "employee_capacity": 5,
+      "bicycle_capacity": 5,
+      "vehicle_capacity": 1,
+      "accepted_package_sizes": ["small", "medium"]
+    }
+  ]
+}
+```
+
+### `POST /api/v1/offices/select` request
+
+```json
+{ "office_id": "office-small-01" }
+```
+
+Field `office_id` (string) is required. Unknown fields, malformed JSON, and multiple/trailing JSON values are rejected.
+
+### One-time selection
+
+M1 permits exactly **one** head-office selection. Before selection the selected office is `nil`. After a successful selection that office becomes the head office; a second office cannot be selected, and selecting the same office again is also rejected. Branch offices are outside M1D scope.
+
+### Successful selection state
+
+A successfully selected office becomes a runtime Office instance following the §4.1 representation (adds `is_head_office`, `next_rent_due`, `storage.current`/`storage.used`, `contract_status: "active"`, `missed_rent_payments: 0`). `next_rent_due` follows the existing rule: the down payment covers `rent_prepaid_weeks` weeks, so weekly rent is first due that many weeks after the selection date at midnight (e.g., selected Feb 1 → `1980-02-29T00:00:00`).
+
+### Successful selection response
+
+HTTP `200 OK`, `Content-Type: application/json`:
+
+```json
+{
+  "office": { "...": "canonical selected runtime office object" },
+  "cash_balance": 650
+}
+```
+
+From the canonical £1000 starting cash, selecting Small yields `cash_balance = 650`; selecting Large yields `cash_balance = 550`. The response does not return the entire game state.
+
+### Atomic selection behavior
+
+A successful selection is one atomic operation: (1) validate no office is selected; (2) resolve the requested canonical definition; (3) validate sufficient cash; (4) construct the runtime Office; (5) deduct the exact down payment; (6) append exactly one finance transaction; (7) commit all state changes together. If any validation fails, the selected office, cash, and transaction list are all left unchanged — no partial mutation.
+
+### Minimal finance invariant
+
+Per §11.3, monetary mutations create a finance transaction. M1D introduces only the minimum finance state to preserve that invariant (current cash balance + an in-memory transaction collection) — not the general finance subsystem. A successful selection appends exactly one transaction:
+
+```json
+{
+  "type": "office_down_payment",
+  "amount": -350,
+  "game_datetime": "1980-02-01T09:00:00",
+  "balance_after": 650,
+  "office_id": "office-small-01"
+}
+```
+
+`amount` is the negative down payment (Small `-350`, Large `-450`). This transaction is internal game state; M1D adds no `/api/v1/finance` endpoints, transaction IDs, persistence, payroll, rent charging, late fees, loans, or generic finance commands.
+
+### Selection timestamp
+
+The office down-payment transaction uses the authoritative fictional Clock snapshot at the instant selection executes. It never uses `time.Now()` / host wall clock, and office selection does not advance or otherwise mutate game time.
+
+### Office selection error codes
+
+All errors use the canonical envelope from §14.1 (`error.code`, `error.message`, optional `error.details`). Deterministic business validation order: (1) malformed/invalid request transport; (2) already-selected state; (3) office existence; (4) sufficient funds.
+
+| Code | HTTP | Meaning |
+|---|---:|---|
+| `OFFICE_NOT_FOUND` | 404 | `office_id` is syntactically valid but does not identify a canonical selectable office; state unchanged |
+| `INSUFFICIENT_FUNDS` | 409 | the requested office exists but current cash is less than its down payment; state unchanged (`details` may carry `{"required":N,"available":M}`) |
+| `OFFICE_ALREADY_SELECTED` | 409 | a head office is already selected (same or other office); any syntactically valid selection request returns this without changing state |
+
+### Generic API errors and unsupported methods
+
+The generic codes also apply: `INVALID_JSON` (400) for malformed JSON / multiple values / undecodable body; `INVALID_REQUEST` (400) for missing `office_id`, wrong type, empty office ID, unknown fields, or otherwise-invalid shape. `GET /api/v1/offices` accepts GET only and `POST /api/v1/offices/select` accepts POST only; other methods return HTTP 405 with `METHOD_NOT_ALLOWED` (JSON) and must not mutate state. No plain-text errors on Office API routes.
+
 ---
 
 # 5. Packages
