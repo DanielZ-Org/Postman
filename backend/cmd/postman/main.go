@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DanielZ-Org/Postman/backend/internal/api"
+	"github.com/DanielZ-Org/Postman/backend/internal/game"
 )
 
 const defaultListenAddr = "127.0.0.1:8080"
@@ -20,9 +21,13 @@ func main() {
 		log.Fatalf("[postman] refusing to bind %q: initial deployment must listen on localhost only", addr)
 	}
 
+	// Bootstrap the authoritative in-memory game state (M1B: the clock). The API
+	// layer only reads it; it never owns mutable game state itself.
+	state := game.NewInitialState()
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(),
+		Handler:           api.NewRouter(state.Clock),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

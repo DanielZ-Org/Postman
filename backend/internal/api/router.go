@@ -5,17 +5,25 @@
 // must remain read-only and must not create or seed authoritative state.
 package api
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/DanielZ-Org/Postman/backend/internal/game"
+)
 
 // NewRouter builds the backend handler using only the standard library.
 //
-// The versioned boundary is /api/v1; business routes are registered on the
-// inner v1 mux in later Acts. No third-party middleware or router is used.
-func NewRouter() http.Handler {
+// The versioned boundary is /api/v1; business routes are registered on the inner
+// v1 mux as M1 Acts implement them. No third-party middleware or router is used.
+// The authoritative clock is passed in so the API layer never owns mutable game
+// state itself — it only reads a snapshot of it.
+func NewRouter(clock game.Clock) http.Handler {
 	mux := http.NewServeMux()
 	v1 := http.NewServeMux()
 
-	// Business routes (game, clock, offices, ...) are registered on v1 in later Acts.
+	// M1B: read-only clock endpoint. Further business routes are registered in later Acts.
+	v1.HandleFunc("/clock", newClockHandler(clock).handle)
+
 	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", v1))
 
 	return mux

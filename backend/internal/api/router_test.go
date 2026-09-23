@@ -4,17 +4,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/DanielZ-Org/Postman/backend/internal/game"
 )
 
 func TestNewRouterBuildsWithoutExternalServices(t *testing.T) {
-	handler := NewRouter()
+	handler := NewRouter(game.NewClock())
 	if handler == nil {
 		t.Fatal("NewRouter returned nil handler")
 	}
 }
 
 func TestUnimplementedRouteStaysUnderV1Boundary(t *testing.T) {
-	router := NewRouter()
+	router := NewRouter(game.NewClock())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/game", nil)
 	w := httptest.NewRecorder()
