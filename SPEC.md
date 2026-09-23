@@ -77,6 +77,29 @@ Base rules
 
 The external/random event system remains **DEFERRED** for the MVP; this section only defines the extension boundary so it can be added later without restructuring the core backend.
 
+### 1.5 Backend lifecycle, startup bootstrap and persistence ownership
+
+The backend owns authoritative game state and gameplay rules. The React frontend is untrusted input: it sends commands and choices and renders the state returned by the backend.
+
+- API boundary remains versioned REST/JSON under `/api/v1`.
+- Initial deployment binds to localhost only (`127.0.0.1`).
+- SQLite remains the initial persistence mechanism.
+
+#### New-game bootstrap (M1)
+
+Game state is **not** created as a side effect of `GET /api/v1/game`.
+
+When the backend process starts:
+
+- if a persisted game exists, load it;
+- otherwise create the default initial M1 game state in memory.
+
+The initial game time remains the canonical value defined by this specification.
+
+`GET` endpoints remain strictly read-only and must not mutate or seed authoritative state.
+
+An explicit "new game" reset endpoint is deferred until the product needs reset / multiple-save / new-game UI semantics, and is **not** part of M1.
+
 ---
 
 # 2. Game clock and calendar
@@ -715,7 +738,13 @@ For MVP Slice 1, no purchased vehicle is necessary because the employee walks.
 
 SQLite is the initial persistence technology.
 
-The storage layer should be kept behind Go interfaces/repositories rather than allowing API handlers to contain raw persistence logic everywhere.
+Persistence ownership follows application-inverts-dependency direction:
+
+- The game/application layer owns the persistence interface (the abstraction).
+- Infrastructure (the SQLite adapter) implements that interface and depends on the game layer, never the reverse.
+- The game/application layer must not import an infrastructure/persistence package.
+
+Avoid generic per-entity repository proliferation; keep the abstraction focused on what the application actually needs.
 
 At minimum, saved state eventually needs to cover:
 
@@ -790,36 +819,64 @@ Invalid rule checks or state transitions should return machine-readable errors a
 
 ## 14.2 Example game-state response
 
-A convenient aggregate endpoint may be useful for the UI:
+`GET /api/v1/game` returns the state under a single `game-state` wrapper (this is the contract the frontend consumes):
 
 ```json
 {
-  "game": {
-    "status": "running",
+  "game-state": {
+    "game": {
+      "status": "running",
+      "game_datetime": "1980-02-01T09:00:00",
+      "speed": 1
+    },
+    "player": {
+      "id": "player-1",
+      "cash": 600.0,
+      "trait": "financial"
+    },
+    "office": null,
+    "operations": {
+      "stored_packages": 18,
+      "out_for_delivery": 0,
+      "delivered_today": 0
+    },
+    "finance": {
+      "accrued_wages": 0.0,
+      "next_rent": 50.0,
+      "loan_principal": 1000.0
+    }
+  }
+}
+```
+
+`office` is `null` until an office has been selected; once selected it carries:
+
+```json
+{
+  "id": "office-small-01",
+  "storage_used": 18,
+  "storage_capacity": 100,
+  "employee_count": 1,
+  "employee_capacity": 5
+}
+```
+
+`GET /api/v1/game` is read-only and must not create or seed state as a side effect.
+
+## 14.3 Example clock response
+
+`GET /api/v1/clock` returns the clock under a single `clock` wrapper:
+
+```json
+{
+  "clock": {
     "game_datetime": "1980-02-01T09:00:00",
-    "speed": 1
-  },
-  "player": {
-    "id": "player-1",
-    "cash": 600.0,
-    "trait": "financial"
-  },
-  "office": {
-    "id": "office-small-01",
-    "storage_used": 18,
-    "storage_capacity": 100,
-    "employee_count": 1,
-    "employee_capacity": 5
-  },
-  "operations": {
-    "stored_packages": 18,
-    "out_for_delivery": 0,
-    "delivered_today": 0
-  },
-  "finance": {
-    "accrued_wages": 0.0,
-    "next_rent": 50.0,
-    "loan_principal": 1000.0
+    "day_of_week": "friday",
+    "speed": 1,
+    "paused": false,
+    "office_open": true,
+    "days_until_next_payroll": 4,
+    "days_until_next_rent": 0
   }
 }
 ```
