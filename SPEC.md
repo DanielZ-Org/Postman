@@ -881,6 +881,52 @@ Invalid rule checks or state transitions should return machine-readable errors a
 }
 ```
 
+## 14.4 Clock mutation endpoints
+
+The clock supports three mutations in addition to `GET /api/v1/clock`. All are deterministic and use only fictional game calendar time (never the host wall clock). The backend owns the authoritative clock; these endpoints mutate it and return the updated state.
+
+### Request bodies
+
+| Endpoint | Body | Field | Type | Allowed values |
+|---|---|---|---:|---|
+| `POST /api/v1/clock/speed` | `{"speed": 1}` | `speed` | integer | `1`, `2`, `3` |
+| `POST /api/v1/clock/pause` | `{"paused": true}` | `paused` | boolean | `true`, `false` |
+| `POST /api/v1/clock/skip-to-next-opening` | `{}` (or empty) | — | — | no fields allowed |
+
+- **Speed** changes only the configured speed. It is allowed while paused; the clock stays paused until explicitly unpaused. Advancement rates remain those defined in §2.2: speed 1 → 120, speed 2 → 240, speed 3 → 360 game seconds per real second.
+- **Pause** changes only the `paused` flag (`true` pauses advancement, `false` resumes). It does not change speed or game time; while paused, deterministic advancement makes no change to game time.
+- **Skip-to-next-opening** accepts an empty body `{}` (a zero-length body is also accepted) and contains no fields. It changes only game date/time and preserves both the current speed and the `paused` state.
+
+### Skip-to-next-opening semantics
+
+Working schedule (§2.4): Mon–Fri 09:00–17:00, Sat 10:00–13:00, Sun closed. Opening intervals are half-open `[opening, closing)`: exactly at opening → open; exactly at closing → closed.
+
+- **Currently open** → safe no-op: game time unchanged, speed and `paused` preserved, HTTP 200 with the current clock snapshot. It does NOT advance to the next working day merely because it was called while already open (this avoids accidental loss of a playable working period).
+- **Currently closed** → advance to the earliest upcoming opening instant. Examples: Mon 08:00 → Mon 09:00; Mon 17:00 → Tue 09:00; Fri 17:00 → Sat 10:00; Sat 09:00 → Sat 10:00; Sat 13:00 → Mon 09:00; any Sunday → Mon 09:00.
+
+M1C has no packages/events/scheduled simulation, so skip may move clock time directly. When time-dependent simulation is later introduced, skipped intervals must be processed through appropriate simulation semantics rather than bypassing game effects (not implemented in M1C).
+
+### Success responses
+
+All three mutation endpoints return HTTP `200 OK`, `Content-Type: application/json`, with the complete **updated** canonical clock snapshot under the same `clock` wrapper as `GET /api/v1/clock`. No separate mutation-response shapes are introduced.
+
+### Validation policy
+
+- Speed and pause: body must be valid JSON; the required field must be present with the correct type; unknown fields are rejected; multiple/trailing JSON values are rejected.
+- Skip: a zero-length body is accepted, `{}` is accepted, any JSON fields are rejected, malformed JSON is rejected, trailing JSON values are rejected.
+- Rejected input never mutates authoritative state.
+
+### Clock error codes
+
+All clock API errors use the canonical envelope from §14.1 (`error.code`, `error.message`, optional `error.details`). Plain-text errors are not used on the clock API surface.
+
+| Code | HTTP | Meaning |
+|---|---:|---|
+| `INVALID_JSON` | 400 | malformed JSON; more than one JSON value; body cannot be decoded as JSON where required |
+| `INVALID_REQUEST` | 400 | missing field; wrong type; unknown field; skip request contains fields; shape otherwise invalid (`details` may name the field) |
+| `INVALID_CLOCK_SPEED` | 400 | `speed` is an integer but not one of `1`, `2`, `3`; previous speed unchanged (`details` may carry `{"allowed":[1,2,3]}`) |
+| `METHOD_NOT_ALLOWED` | 405 | unsupported HTTP method on a clock route |
+
 ---
 
 # 15. Deferred scope
