@@ -60,6 +60,14 @@ export function TopBar({ game }: { game: GameApi }) {
         <button type="button" className="ctl-btn ctl-skip" onClick={handleSkip} title="Skip to next opening">
           Skip →
         </button>
+        <button
+          type="button"
+          className="ctl-btn ctl-reset"
+          onClick={() => void game.resetGame()}
+          title="Reset mock game to a fresh save"
+        >
+          ↺ New game
+        </button>
       </div>
 
       <div className="topbar-cash">

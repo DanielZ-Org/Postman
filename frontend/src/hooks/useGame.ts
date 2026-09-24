@@ -128,6 +128,8 @@ export function useGame() {
     [runMutation],
   )
 
+  const resetGame = useCallback(() => runMutation(() => api.resetGame()), [runMutation])
+
   useEffect(() => {
     let cancelled = false
 
@@ -171,6 +173,7 @@ export function useGame() {
     selectOffice,
     hireEmployee,
     assignDelivery,
+    resetGame,
   }
 }
 

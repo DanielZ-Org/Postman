@@ -118,7 +118,12 @@ export function OfficeSelect({ game }: { game: GameApi }) {
         ))}
       </div>
       {game.offices.every((office) => cash < office.down_payment) && (
-        <p className="empty-state">Not enough cash for any office contract.</p>
+        <div className="office-broke">
+          <p className="empty-state">Not enough cash for any office contract.</p>
+          <button type="button" className="btn btn-primary" onClick={() => void game.resetGame()}>
+            Start a new game
+          </button>
+        </div>
       )}
     </section>
   )

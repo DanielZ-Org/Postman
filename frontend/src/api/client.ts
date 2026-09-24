@@ -9,7 +9,10 @@ import type {
   Transaction,
 } from './types'
 
-const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api/v1'
+function apiBase(): string {
+  const configured = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE
+  return configured && configured.length > 0 ? configured : '/api/v1'
+}
 
 export class ApiError extends Error {
   readonly code: string
@@ -100,19 +103,20 @@ function optionalNumber(obj: Record<string, unknown>, key: string, path: string)
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const base = apiBase()
   const headers = new Headers(init?.headers)
   if (init?.body) headers.set('Content-Type', 'application/json')
 
   let res: Response
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(10_000),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new ApiError('BACKEND_UNREACHABLE', `Cannot reach backend at ${API_BASE}${path}: ${message}`, 0)
+    throw new ApiError('BACKEND_UNREACHABLE', `Cannot reach backend at ${base}${path}: ${message}`, 0)
   }
 
   const text = await res.text()
@@ -435,5 +439,9 @@ export const api = {
       'GET /finance/transactions',
     )
     return list.map((item, index) => parseTransaction(item, `transactions[${index}]`))
+  },
+
+  resetGame(): Promise<unknown> {
+    return request<unknown>('/debug/reset', { method: 'POST', body: JSON.stringify({}) })
   },
 }
