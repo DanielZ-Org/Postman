@@ -13,7 +13,7 @@ import './App.css'
 type Tab = 'overview' | 'packages' | 'employees' | 'deliveries' | 'finance'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'overview', label: 'Flow' },
   { id: 'packages', label: 'Packages' },
   { id: 'employees', label: 'Employees' },
   { id: 'deliveries', label: 'Deliveries' },

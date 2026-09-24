@@ -4,12 +4,18 @@ import type {
   FinanceStatement,
   GameState,
   HiringState,
-  Office,
+  OfficeOffer,
   Package,
+  SelectOfficeResult,
   Transaction,
 } from './types'
 
-const API_BASE: string = import.meta.env.VITE_API_BASE ?? '/api/v1'
+const STARTING_CASH = 1000
+
+function apiBase(): string {
+  const configured = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE
+  return configured && configured.length > 0 ? configured : '/api/v1'
+}
 
 export class ApiError extends Error {
   readonly code: string
@@ -100,19 +106,20 @@ function optionalNumber(obj: Record<string, unknown>, key: string, path: string)
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const base = apiBase()
   const headers = new Headers(init?.headers)
   if (init?.body) headers.set('Content-Type', 'application/json')
 
   let res: Response
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(`${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(10_000),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new ApiError('BACKEND_UNREACHABLE', `Cannot reach backend at ${API_BASE}${path}: ${message}`, 0)
+    throw new ApiError('BACKEND_UNREACHABLE', `Cannot reach backend at ${base}${path}: ${message}`, 0)
   }
 
   const text = await res.text()
@@ -180,8 +187,22 @@ function toList<T>(payload: unknown, keys: string[], source: string): T[] {
   )
 }
 
+function isMissingRoute(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404
+}
+
+function unwrapKey(payload: unknown, key: string): unknown {
+  if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
+    const value = (payload as Record<string, unknown>)[key]
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      return value
+    }
+  }
+  return payload
+}
+
 function parseClock(payload: unknown): ClockState {
-  const o = requireObject(payload, 'clock')
+  const o = requireObject(unwrapKey(payload, 'clock'), 'clock')
   return {
     game_datetime: requireString(o, 'game_datetime', 'clock'),
     day_of_week: requireString(o, 'day_of_week', 'clock'),
@@ -194,7 +215,7 @@ function parseClock(payload: unknown): ClockState {
 }
 
 function parseGameState(payload: unknown): GameState {
-  const root = requireObject(payload, 'game-state')
+  const root = requireObject(unwrapKey(payload, 'game-state'), 'game-state')
   const game = requireObject(root.game, 'game-state.game')
   const player = requireObject(root.player, 'game-state.player')
   const operations = requireObject(root.operations, 'game-state.operations')
@@ -237,30 +258,63 @@ function parseGameState(payload: unknown): GameState {
   }
 }
 
-function parseOffice(value: unknown, path: string): Office {
+function parseOfficeOffer(value: unknown, path: string): OfficeOffer {
   const o = requireObject(value, path)
   const storage = requireObject(o.storage, `${path}.storage`)
+  let base: number
+  let max: number
+  if (storage.base !== undefined || storage.max !== undefined) {
+    base = requireNumber(storage, 'base', `${path}.storage`)
+    max = requireNumber(storage, 'max', `${path}.storage`)
+  } else {
+    base = requireNumber(storage, 'base_capacity', `${path}.storage`)
+    max = requireNumber(storage, 'maximum_capacity', `${path}.storage`)
+  }
   return {
     id: requireString(o, 'id', path),
     type: requireString(o, 'type', path),
-    is_head_office: requireBoolean(o, 'is_head_office', path),
     down_payment: requireNumber(o, 'down_payment', path),
     weekly_rent: requireNumber(o, 'weekly_rent', path),
     rent_prepaid_weeks: requireNumber(o, 'rent_prepaid_weeks', path),
-    next_rent_due: optionalString(o, 'next_rent_due', path),
-    storage: {
-      base_capacity: requireNumber(storage, 'base_capacity', `${path}.storage`),
-      current_capacity: requireNumber(storage, 'current_capacity', `${path}.storage`),
-      maximum_capacity: requireNumber(storage, 'maximum_capacity', `${path}.storage`),
-      used_units: requireNumber(storage, 'used_units', `${path}.storage`),
-    },
+    storage: { base, max },
     employee_capacity: requireNumber(o, 'employee_capacity', path),
     bicycle_capacity: requireNumber(o, 'bicycle_capacity', path),
     vehicle_capacity: requireNumber(o, 'vehicle_capacity', path),
     accepted_package_sizes: requireStringArray(o, 'accepted_package_sizes', path),
-    contract_status: requireString(o, 'contract_status', path),
-    missed_rent_payments: requireNumber(o, 'missed_rent_payments', path),
   }
+}
+
+function parseSelectOffice(payload: unknown, requestedId: string): SelectOfficeResult {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { cash_balance: null, office_id: requestedId, state: null }
+  }
+  const record = payload as Record<string, unknown>
+  const looksLikeFullState =
+    record.game !== null &&
+    typeof record.game === 'object' &&
+    !Array.isArray(record.game) &&
+    record.player !== null &&
+    typeof record.player === 'object' &&
+    !Array.isArray(record.player)
+  if (looksLikeFullState) {
+    try {
+      const state = parseGameState(payload)
+      return {
+        cash_balance: state.player.cash,
+        office_id: state.office?.id ?? requestedId,
+        state,
+      }
+    } catch {
+      return { cash_balance: null, office_id: requestedId, state: null }
+    }
+  }
+  if (record.office !== null && typeof record.office === 'object' && !Array.isArray(record.office)) {
+    const office = record.office as Record<string, unknown>
+    const cash = typeof record.cash_balance === 'number' ? record.cash_balance : null
+    const officeId = typeof office.id === 'string' ? office.id : requestedId
+    return { cash_balance: cash, office_id: officeId, state: null }
+  }
+  return { cash_balance: null, office_id: requestedId, state: null }
 }
 
 function parsePackage(value: unknown, path: string): Package {
@@ -354,8 +408,13 @@ function parseTransaction(value: unknown, path: string): Transaction {
 }
 
 export const api = {
-  async getGame(): Promise<GameState> {
-    return parseGameState(await request<unknown>('/game'))
+  async getGame(): Promise<GameState | null> {
+    try {
+      return parseGameState(await request<unknown>('/game'))
+    } catch (err) {
+      if (isMissingRoute(err)) return null
+      throw err
+    }
   },
 
   async getClock(): Promise<ClockState> {
@@ -374,22 +433,37 @@ export const api = {
     return request<unknown>('/clock/skip-to-next-opening', { method: 'POST', body: JSON.stringify({}) })
   },
 
-  async getOffices(): Promise<Office[]> {
+  async getOffices(): Promise<OfficeOffer[]> {
     const list = toList<unknown>(await request<unknown>('/offices'), ['offices', 'items', 'results'], 'GET /offices')
-    return list.map((item, index) => parseOffice(item, `offices[${index}]`))
+    return list.map((item, index) => parseOfficeOffer(item, `offices[${index}]`))
   },
 
-  selectOffice(officeId: string): Promise<unknown> {
-    return request<unknown>('/offices/select', { method: 'POST', body: JSON.stringify({ office_id: officeId }) })
+  async selectOffice(officeId: string): Promise<SelectOfficeResult> {
+    const payload = await request<unknown>('/offices/select', {
+      method: 'POST',
+      body: JSON.stringify({ office_id: officeId }),
+    })
+    return parseSelectOffice(payload, officeId)
   },
 
   async getPackages(): Promise<Package[]> {
-    const list = toList<unknown>(await request<unknown>('/packages'), ['packages', 'items', 'results'], 'GET /packages')
-    return list.map((item, index) => parsePackage(item, `packages[${index}]`))
+    try {
+      const list = toList<unknown>(await request<unknown>('/packages'), ['packages', 'items', 'results'], 'GET /packages')
+      return list.map((item, index) => parsePackage(item, `packages[${index}]`))
+    } catch (err) {
+      if (isMissingRoute(err)) return []
+      throw err
+    }
   },
 
   async getEmployees(): Promise<{ employees: Employee[]; hiring: HiringState | null }> {
-    const payload = await request<unknown>('/employees')
+    let payload: unknown
+    try {
+      payload = await request<unknown>('/employees')
+    } catch (err) {
+      if (isMissingRoute(err)) return { employees: [], hiring: null }
+      throw err
+    }
     if (Array.isArray(payload)) {
       return { employees: payload.map((item, index) => parseEmployee(item, `employees[${index}]`)), hiring: null }
     }
@@ -424,16 +498,32 @@ export const api = {
     })
   },
 
-  async getFinance(): Promise<FinanceStatement> {
-    return parseFinance(await request<unknown>('/finance'))
+  async getFinance(): Promise<FinanceStatement | null> {
+    try {
+      return parseFinance(await request<unknown>('/finance'))
+    } catch (err) {
+      if (isMissingRoute(err)) return null
+      throw err
+    }
   },
 
   async getTransactions(): Promise<Transaction[]> {
-    const list = toList<unknown>(
-      await request<unknown>('/finance/transactions'),
-      ['transactions', 'items', 'results'],
-      'GET /finance/transactions',
-    )
-    return list.map((item, index) => parseTransaction(item, `transactions[${index}]`))
+    try {
+      const list = toList<unknown>(
+        await request<unknown>('/finance/transactions'),
+        ['transactions', 'items', 'results'],
+        'GET /finance/transactions',
+      )
+      return list.map((item, index) => parseTransaction(item, `transactions[${index}]`))
+    } catch (err) {
+      if (isMissingRoute(err)) return []
+      throw err
+    }
+  },
+
+  resetGame(): Promise<unknown> {
+    return request<unknown>('/debug/reset', { method: 'POST', body: JSON.stringify({}) })
   },
 }
+
+export { STARTING_CASH }

@@ -55,6 +55,25 @@ export interface Office {
   missed_rent_payments: number
 }
 
+export interface OfficeOffer {
+  id: string
+  type: OfficeType | string
+  down_payment: number
+  weekly_rent: number
+  rent_prepaid_weeks: number
+  storage: { base: number; max: number }
+  employee_capacity: number
+  bicycle_capacity: number
+  vehicle_capacity: number
+  accepted_package_sizes: PackageSize[] | string[]
+}
+
+export interface SelectOfficeResult {
+  cash_balance: number | null
+  office_id: string
+  state: GameState | null
+}
+
 export interface Package {
   id: string
   size: PackageSize | string

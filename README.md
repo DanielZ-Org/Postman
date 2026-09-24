@@ -24,6 +24,58 @@ The API contract is the boundary between backend and frontend. The backend owns 
 
 When implementation and documentation disagree, treat the discrepancy as something to resolve explicitly rather than silently changing the contract.
 
+## Screenshots
+
+Office select:
+
+![Office select](docs/screenshots/01-office-select.png)
+
+Delivery flow pipeline:
+
+![Delivery flow](docs/screenshots/02-flow-pipeline.png)
+
+Packages, employees, deliveries, finance:
+
+![Packages](docs/screenshots/03-packages.png)
+![Employees](docs/screenshots/04-employees.png)
+![Deliveries](docs/screenshots/05-deliveries.png)
+![Flow with courier](docs/screenshots/06-flow-with-courier.png)
+![Finance](docs/screenshots/07-finance.png)
+
+## Frontend (React)
+
+Mock-only (full play loop, no Go server):
+
+```bash
+cd frontend
+npm install
+npm run dev:mock    # http://localhost:5173 with in-Vite mock API
+```
+
+With the Go backend (clock + office select against real API):
+
+```bash
+# terminal 1
+cd backend
+go run ./cmd/postman   # listens on 127.0.0.1:8080
+
+# terminal 2
+cd frontend
+npm install
+npm run dev            # http://localhost:5173, proxies /api to :8080
+```
+
+Missing backend routes (packages, employees, finance, `GET /game`) are treated as empty/not-yet-available by the UI until those endpoints land.
+
+Tests:
+
+```bash
+npm run test        # Vitest unit + component + API contract
+npm run test:e2e    # Playwright E2E + axe accessibility
+npm run test:all    # lint + vitest + build + e2e
+```
+
+
 ## Architecture principles
 
 1. **Backend is the source of truth.**

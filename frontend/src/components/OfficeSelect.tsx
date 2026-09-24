@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { GameApi } from '../hooks/useGame'
-import type { Office } from '../api/types'
+import type { OfficeOffer } from '../api/types'
 import { formatMoney } from '../lib/format'
 
 function OfficeCard({
@@ -8,7 +8,7 @@ function OfficeCard({
   onSelect,
   disabled,
 }: {
-  office: Office
+  office: OfficeOffer
   onSelect: () => void
   disabled: boolean
 }) {
@@ -42,9 +42,9 @@ function OfficeCard({
         <div>
           <dt>Storage</dt>
           <dd>
-            {office.storage.base_capacity} units
-            {office.storage.maximum_capacity > office.storage.base_capacity && (
-              <span className="muted"> → max {office.storage.maximum_capacity}</span>
+            {office.storage.base} units
+            {office.storage.max > office.storage.base && (
+              <span className="muted"> → max {office.storage.max}</span>
             )}
           </dd>
         </div>
@@ -118,7 +118,12 @@ export function OfficeSelect({ game }: { game: GameApi }) {
         ))}
       </div>
       {game.offices.every((office) => cash < office.down_payment) && (
-        <p className="empty-state">Not enough cash for any office contract.</p>
+        <div className="office-broke">
+          <p className="empty-state">Not enough cash for any office contract.</p>
+          <button type="button" className="btn btn-primary" onClick={() => void game.resetGame()}>
+            Start a new game
+          </button>
+        </div>
       )}
     </section>
   )

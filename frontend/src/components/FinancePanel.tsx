@@ -25,7 +25,7 @@ export function FinancePanel({ game }: { game: GameApi }) {
           )}
         </div>
         {!finance ? (
-          <p className="empty-state">Loading finance data…</p>
+          <p className="empty-state">No finance statement yet.</p>
         ) : (
           <>
             <div className="finance-block">
