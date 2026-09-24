@@ -46,18 +46,34 @@ describe('TopBar', () => {
     expect(game.setSpeed).toHaveBeenCalledWith(3)
   })
 
-  it('calls skipToNextOpening and resetGame', async () => {
+  it('calls skipToNextOpening', async () => {
     const user = userEvent.setup()
     const game = makeGameApi({
       skipToNextOpening: vi.fn(async () => undefined) as GameApi['skipToNextOpening'],
-      resetGame: vi.fn(async () => true) as unknown as GameApi['resetGame'],
     })
     render(<TopBar game={game} />)
 
     await user.click(screen.getByTitle('Skip to next opening'))
-    await user.click(screen.getByTitle('Reset mock game to a fresh save'))
     expect(game.skipToNextOpening).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows reset control only in mock mode and calls resetGame', async () => {
+    vi.stubEnv('MODE', 'mock')
+    const user = userEvent.setup()
+    const game = makeGameApi({
+      resetGame: vi.fn(async () => true) as unknown as GameApi['resetGame'],
+    })
+    render(<TopBar game={game} />)
+
+    const resetBtn = screen.getByTitle('Reset mock game to a fresh save')
+    await user.click(resetBtn)
     expect(game.resetGame).toHaveBeenCalledTimes(1)
+    vi.unstubAllEnvs()
+  })
+
+  it('hides reset control outside mock mode', () => {
+    render(<TopBar game={makeGameApi()} />)
+    expect(screen.queryByTitle('Reset mock game to a fresh save')).not.toBeInTheDocument()
   })
 
   it('marks cash negative', () => {

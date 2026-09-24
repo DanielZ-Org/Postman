@@ -6,6 +6,7 @@ import type {
   GameState,
   HiringState,
   Office,
+  OfficeOffer,
   Package,
   Transaction,
 } from '../api/types'
@@ -45,6 +46,22 @@ export function makeOffice(overrides: Partial<Office> = {}): Office {
     accepted_package_sizes: ['small', 'medium'],
     contract_status: 'active',
     missed_rent_payments: 0,
+    ...overrides,
+  }
+}
+
+export function makeOfficeOffer(overrides: Partial<OfficeOffer> = {}): OfficeOffer {
+  return {
+    id: 'office-small-01',
+    type: 'small',
+    down_payment: 350,
+    weekly_rent: 50,
+    rent_prepaid_weeks: 4,
+    storage: { base: 100, max: 150 },
+    employee_capacity: 5,
+    bicycle_capacity: 5,
+    vehicle_capacity: 1,
+    accepted_package_sizes: ['small', 'medium'],
     ...overrides,
   }
 }
@@ -193,21 +210,14 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
     clock: makeClock(),
     state: makeGameState(),
     offices: [
-      makeOffice({ id: 'office-small-01', is_head_office: false, contract_status: 'available' }),
-      makeOffice({
+      makeOfficeOffer({ id: 'office-small-01' }),
+      makeOfficeOffer({
         id: 'office-large-01',
         type: 'large',
         down_payment: 450,
         weekly_rent: 75,
-        is_head_office: false,
-        contract_status: 'available',
         employee_capacity: 7,
-        storage: {
-          base_capacity: 150,
-          current_capacity: 150,
-          maximum_capacity: 250,
-          used_units: 0,
-        },
+        storage: { base: 150, max: 250 },
       }),
     ],
     packages: [
@@ -227,6 +237,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
     transactions: [makeTransaction()],
     error: null,
     loaded: true,
+    selection: null,
     dismissError: mockFn<GameApi['dismissError']>(),
     refresh: mockFn<GameApi['refresh']>(),
     setSpeed: mockFn<GameApi['setSpeed']>(),

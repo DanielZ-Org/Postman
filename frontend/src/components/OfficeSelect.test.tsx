@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { OfficeSelect } from './OfficeSelect'
 import type { GameApi } from '../hooks/useGame'
-import { makeGameApi, makeGameState, makeOffice } from '../test/factories'
+import { makeGameApi, makeGameState, makeOfficeOffer } from '../test/factories'
 
 describe('OfficeSelect', () => {
   it('shows loading state when offices are empty', () => {
@@ -40,7 +40,7 @@ describe('OfficeSelect', () => {
         player: { id: 'p', cash: 100, trait: 'financial' },
         office: null,
       }),
-      offices: [makeOffice({ id: 'small', is_head_office: false, contract_status: 'available' })],
+      offices: [makeOfficeOffer({ id: 'small' })],
     })
     render(<OfficeSelect game={game} />)
     expect(screen.getByRole('button', { name: 'Select office' })).toBeDisabled()

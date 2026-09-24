@@ -44,11 +44,28 @@ Packages, employees, deliveries, finance:
 
 ## Frontend (React)
 
+Mock-only (full play loop, no Go server):
+
 ```bash
 cd frontend
 npm install
 npm run dev:mock    # http://localhost:5173 with in-Vite mock API
 ```
+
+With the Go backend (clock + office select against real API):
+
+```bash
+# terminal 1
+cd backend
+go run ./cmd/postman   # listens on 127.0.0.1:8080
+
+# terminal 2
+cd frontend
+npm install
+npm run dev            # http://localhost:5173, proxies /api to :8080
+```
+
+Missing backend routes (packages, employees, finance, `GET /game`) are treated as empty/not-yet-available by the UI until those endpoints land.
 
 Tests:
 

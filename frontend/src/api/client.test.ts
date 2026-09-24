@@ -37,7 +37,7 @@ describe('ApiError / toApiError', () => {
 })
 
 describe('api.getClock', () => {
-  it('parses a valid clock payload', async () => {
+  it('parses a valid flat clock payload', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, makeClock()))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -46,6 +46,13 @@ describe('api.getClock', () => {
     expect(clock.speed).toBe(1)
     expect(clock.paused).toBe(false)
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/clock'), expect.anything())
+  })
+
+  it('unwraps a Go {clock:{...}} payload', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { clock: makeClock() })))
+    const clock = await api.getClock()
+    expect(clock.game_datetime).toBe('1980-02-01T09:00:00.000Z')
+    expect(clock.speed).toBe(1)
   })
 
   it('throws ApiError when a required field is missing', async () => {
@@ -102,9 +109,30 @@ describe('api.getGameState', () => {
   it('parses a full game state', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeGameState())))
     const state = await api.getGame()
-    expect(state.player.cash).toBe(1000)
-    expect(state.office?.id).toBe('office-small-01')
-    expect(state.operations.stored_packages).toBe(6)
+    expect(state).not.toBeNull()
+    expect(state?.player.cash).toBe(1000)
+    expect(state?.office?.id).toBe('office-small-01')
+    expect(state?.operations.stored_packages).toBe(6)
+  })
+
+  it('unwraps a game-state wrapper', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { 'game-state': makeGameState({ office: null }) })),
+    )
+    const state = await api.getGame()
+    expect(state).not.toBeNull()
+    expect(state?.office).toBeNull()
+  })
+
+  it('returns null when the route is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(404, { error: { code: 'HTTP_404', message: 'not found' } }),
+      ),
+    )
+    await expect(api.getGame()).resolves.toBeNull()
   })
 
   it('allows a null office (pre-select)', async () => {
@@ -113,7 +141,7 @@ describe('api.getGameState', () => {
       vi.fn().mockResolvedValue(jsonResponse(200, makeGameState({ office: null }))),
     )
     const state = await api.getGame()
-    expect(state.office).toBeNull()
+    expect(state?.office).toBeNull()
   })
 })
 
@@ -125,12 +153,69 @@ describe('api.getOffices', () => {
     )
     const offices = await api.getOffices()
     expect(offices).toHaveLength(1)
-    expect(offices[0].storage.base_capacity).toBe(100)
+    expect(offices[0].storage.base).toBe(100)
+    expect(offices[0].storage.max).toBe(150)
+  })
+
+  it('parses Go catalogue shape {storage:{base,max}}', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          offices: [
+            {
+              id: 'office-small-01',
+              type: 'small',
+              down_payment: 350,
+              weekly_rent: 50,
+              rent_prepaid_weeks: 4,
+              storage: { base: 100, max: 150 },
+              employee_capacity: 5,
+              bicycle_capacity: 5,
+              vehicle_capacity: 1,
+              accepted_package_sizes: ['small', 'medium'],
+            },
+          ],
+        }),
+      ),
+    )
+    const offices = await api.getOffices()
+    expect(offices[0].storage).toEqual({ base: 100, max: 150 })
+    expect(offices[0].down_payment).toBe(350)
   })
 
   it('throws when payload is not a list', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { nope: true })))
     await expect(api.getOffices()).rejects.toMatchObject({ code: 'UNEXPECTED_RESPONSE' })
+  })
+})
+
+describe('api.selectOffice', () => {
+  it('parses Go {office, cash_balance} response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          office: { id: 'office-small-01', type: 'small' },
+          cash_balance: 650,
+        }),
+      ),
+    )
+    const result = await api.selectOffice('office-small-01')
+    expect(result.cash_balance).toBe(650)
+    expect(result.office_id).toBe('office-small-01')
+  })
+
+  it('parses mock full game-state response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, makeGameState({ player: { id: 'p', cash: 650, trait: 'financial' } })),
+      ),
+    )
+    const result = await api.selectOffice('office-small-01')
+    expect(result.cash_balance).toBe(650)
+    expect(result.state?.player.cash).toBe(650)
   })
 })
 
@@ -143,6 +228,11 @@ describe('api.getPackages', () => {
     const packages = await api.getPackages()
     expect(packages[0].destination_type).toBe('local')
     expect(packages[0].final_revenue).toBeNull()
+  })
+
+  it('returns [] when the route is missing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(404, '404 page not found')))
+    await expect(api.getPackages()).resolves.toEqual([])
   })
 })
 
@@ -171,8 +261,13 @@ describe('api.getFinance / getTransactions', () => {
   it('parses a finance statement', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeFinance())))
     const finance = await api.getFinance()
-    expect(finance.income.total).toBe(0)
-    expect(finance.liabilities.next_rent_amount).toBe(50)
+    expect(finance?.income.total).toBe(0)
+    expect(finance?.liabilities.next_rent_amount).toBe(50)
+  })
+
+  it('returns null when finance route is missing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(404, '404 page not found')))
+    await expect(api.getFinance()).resolves.toBeNull()
   })
 
   it('parses transactions', async () => {
