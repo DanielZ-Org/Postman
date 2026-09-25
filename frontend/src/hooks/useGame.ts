@@ -27,46 +27,6 @@ function isMissingRoute(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404
 }
 
-function synthesizeGameState(
-  clock: ClockState | null,
-  packages: Package[],
-  selection: LocalSelection | null,
-  offices: OfficeOffer[],
-): GameState {
-  const offer = selection ? offices.find((o) => o.id === selection.officeId) ?? null : null
-  return {
-    game: {
-      status: 'running',
-      game_datetime: clock?.game_datetime ?? '1980-02-01T09:00:00',
-      speed: clock?.speed ?? 1,
-    },
-    player: {
-      id: 'player-1',
-      cash: selection?.cash ?? STARTING_CASH,
-      trait: 'financial',
-    },
-    office: selection && offer
-      ? {
-          id: offer.id,
-          storage_used: packages.filter((p) => p.status === 'stored').length,
-          storage_capacity: offer.storage.base,
-          employee_count: 0,
-          employee_capacity: offer.employee_capacity,
-        }
-      : null,
-    operations: {
-      stored_packages: packages.filter((p) => p.status === 'stored').length,
-      out_for_delivery: packages.filter((p) => p.status === 'out_for_delivery').length,
-      delivered_today: packages.filter((p) => p.status === 'delivered').length,
-    },
-    finance: {
-      accrued_wages: 0,
-      next_rent: offer?.weekly_rent ?? 0,
-      loan_principal: STARTING_CASH,
-    },
-  }
-}
-
 export function useGame() {
   const [clock, setClock] = useState<ClockState | null>(null)
   const [state, setState] = useState<GameState | null>(null)
@@ -81,8 +41,6 @@ export function useGame() {
   const [selection, setSelection] = useState<LocalSelection | null>(null)
 
   const clockRef = useRef<ClockState | null>(null)
-  const officesRef = useRef<OfficeOffer[]>([])
-  const packagesRef = useRef<Package[]>([])
   const selectionRef = useRef<LocalSelection | null>(null)
 
   const refresh = useCallback(async () => {
@@ -104,11 +62,9 @@ export function useGame() {
       setClock(clockResult.value)
     }
     if (officesResult.status === 'fulfilled') {
-      officesRef.current = officesResult.value
       setOffices(officesResult.value)
     }
     if (packagesResult.status === 'fulfilled') {
-      packagesRef.current = packagesResult.value
       setPackages(packagesResult.value)
     }
     if (employeesResult.status === 'fulfilled') {
@@ -118,6 +74,9 @@ export function useGame() {
     if (financeResult.status === 'fulfilled') setFinance(financeResult.value)
     if (transactionsResult.status === 'fulfilled') setTransactions(transactionsResult.value)
 
+    // The game state comes only from GET /game (SPEC 17.13: no client-side
+    // synthesis). A missing route or a rejected read leaves the previous state in
+    // place until the backend serves the endpoint again.
     if (gameStateResult.status === 'fulfilled' && gameStateResult.value !== null) {
       setState(gameStateResult.value)
       const officeId = gameStateResult.value.office?.id ?? null
@@ -129,15 +88,6 @@ export function useGame() {
         selectionRef.current = next
         setSelection(next)
       }
-    } else if (gameStateResult.status === 'fulfilled' || isMissingRouteResult(gameStateResult)) {
-      setState(
-        synthesizeGameState(
-          clockRef.current,
-          packagesRef.current,
-          selectionRef.current,
-          officesRef.current,
-        ),
-      )
     }
 
     const hardFailures = results.filter((result) => {
@@ -212,10 +162,6 @@ export function useGame() {
         setSelection(next)
         if (result.state) {
           setState(result.state)
-        } else {
-          setState(
-            synthesizeGameState(clockRef.current, packagesRef.current, next, officesRef.current),
-          )
         }
         setError(null)
         await refresh()
@@ -284,12 +230,6 @@ export function useGame() {
     assignDelivery,
     resetGame,
   }
-}
-
-function isMissingRouteResult(
-  result: PromiseSettledResult<GameState | null>,
-): boolean {
-  return result.status === 'rejected' && isMissingRoute(result.reason)
 }
 
 export type GameApi = ReturnType<typeof useGame>

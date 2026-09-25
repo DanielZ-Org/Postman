@@ -192,13 +192,15 @@ func (h *officeHandler) writeSelectionError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusNotFound, "OFFICE_NOT_FOUND", "no selectable office with the given id", nil)
 	case errors.Is(err, game.ErrAlreadySelected):
 		writeAPIError(w, http.StatusConflict, "OFFICE_ALREADY_SELECTED", "a head office is already selected", nil)
+	case errors.Is(err, game.ErrGameOver):
+		writeAPIError(w, http.StatusConflict, "GAME_OVER", "the game has ended", nil)
 	default:
 		var ife *game.InsufficientFundsError
 		if errors.As(err, &ife) {
 			writeAPIError(w, http.StatusConflict, "INSUFFICIENT_FUNDS", "insufficient cash for the down payment", map[string]any{"required": ife.Required, "available": ife.Available})
 			return
 		}
-		// Unreachable: SelectOffice returns exactly one of the three error kinds above. Emit a JSON 500
+		// Unreachable: SelectOffice returns exactly one of the error kinds above. Emit a JSON 500
 		// (never plain text) to keep the Office API contract intact in an impossible state.
 		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected office selection failure", nil)
 	}

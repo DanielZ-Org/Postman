@@ -47,7 +47,22 @@ describe('OfficeSelect', () => {
     expect(screen.getByText('Not enough cash for any office contract.')).toBeInTheDocument()
   })
 
-  it('offers a reset when player cannot afford any office', async () => {
+  it('hides the reset outside mock mode', () => {
+    const game = makeGameApi({
+      state: makeGameState({
+        player: { id: 'p', cash: 0, trait: 'financial' },
+        office: null,
+      }),
+      resetGame: vi.fn(async () => true) as unknown as GameApi['resetGame'],
+    })
+    render(<OfficeSelect game={game} />)
+    expect(screen.getByText('Not enough cash for any office contract.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start a new game' })).not.toBeInTheDocument()
+    expect(game.resetGame).not.toHaveBeenCalled()
+  })
+
+  it('offers a reset in mock mode when player cannot afford any office', async () => {
+    vi.stubEnv('MODE', 'mock')
     const user = userEvent.setup()
     const game = makeGameApi({
       state: makeGameState({
@@ -59,5 +74,6 @@ describe('OfficeSelect', () => {
     render(<OfficeSelect game={game} />)
     await user.click(screen.getByRole('button', { name: 'Start a new game' }))
     expect(game.resetGame).toHaveBeenCalledTimes(1)
+    vi.unstubAllEnvs()
   })
 })

@@ -106,6 +106,13 @@ type RuntimeOffice struct {
 	MissedRentPayments   int    // 0 at selection
 }
 
+// Office contract states (SPEC 4.1/4.2). A terminated contract frees the head-office
+// slot so the player may enter a new contract if they can afford it.
+const (
+	ContractActive     = "active"
+	ContractTerminated = "terminated"
+)
+
 // ErrOfficeNotFound is returned by SelectOffice when the requested office_id does not identify a
 // canonical selectable office.
 var ErrOfficeNotFound = errors.New("office not found")
@@ -133,6 +140,10 @@ func (e *InsufficientFundsError) Error() string {
 // office_down_payment finance transaction — all committed together. If any validation fails, no
 // state is changed (no partial mutation).
 //
+// A previously terminated contract does NOT count as "already selected": SPEC 4.2 ends the game
+// only when the player also cannot afford a new contract, so re-selection after termination is
+// allowed and replaces the terminated office (the old down payment is not refunded).
+//
 // Lock ordering: SelectOffice holds s.mu while reading the authoritative clock via Clock.Now()
 // (which briefly takes the clock's read lock). No code path ever acquires a clock lock and then
 // s.mu, so this nesting cannot deadlock. All locks are released before returning, so no game lock
@@ -141,8 +152,14 @@ func (s *GameState) SelectOffice(officeID string) (*RuntimeOffice, int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// (1) already-selected state — checked before existence and funds per the canonical order.
-	if s.selectedOffice != nil {
+	// Game-over check first: the game has ended, so no new contract may be entered.
+	if s.status == GameStatusGameOver {
+		return nil, 0, ErrGameOver
+	}
+
+	// (1) already-selected state — an active contract blocks re-selection; a terminated
+	// one frees the slot (SPEC 4.2 re-entry rule).
+	if s.selectedOffice != nil && s.selectedOffice.ContractStatus == ContractActive {
 		return nil, 0, ErrAlreadySelected
 	}
 
@@ -157,8 +174,9 @@ func (s *GameState) SelectOffice(officeID string) (*RuntimeOffice, int, error) {
 		return nil, 0, &InsufficientFundsError{Required: def.DownPayment, Available: s.cash}
 	}
 
-	// Commit atomically: construct the runtime office, deduct the down payment, append one
-	// transaction — all under the same lock so a concurrent selection cannot interleave.
+	// Commit atomically: construct the runtime office, deduct the down payment (posting
+	// exactly one transaction), and update the player head-office reference — all under
+	// the same lock so a concurrent selection cannot interleave.
 	now := s.Clock.Now() // authoritative fictional clock time; no wall clock
 	office := &RuntimeOffice{
 		ID:                   def.ID,
@@ -173,21 +191,34 @@ func (s *GameState) SelectOffice(officeID string) (*RuntimeOffice, int, error) {
 		BicycleCapacity:      def.BicycleCapacity,
 		VehicleCapacity:      def.VehicleCapacity,
 		AcceptedPackageSizes: append([]string(nil), def.AcceptedPackageSizes...),
-		ContractStatus:       "active",
+		ContractStatus:       ContractActive,
 		MissedRentPayments:   0,
 	}
 
-	s.cash -= def.DownPayment
+	s.postTransactionLocked(now, CategoryOfficeDownPayment, -def.DownPayment,
+		upperFirst(def.Type)+" head office contract", def.ID)
 	s.selectedOffice = office
-	s.transactions = append(s.transactions, Transaction{
-		Type:         "office_down_payment",
-		Amount:       -def.DownPayment,
-		GameDatetime: now.Format("2006-01-02T15:04:05"),
-		BalanceAfter: s.cash,
-		OfficeID:     def.ID,
-	})
+	s.player.HeadOfficeID = def.ID
+	// Generation only runs while an office is open for business: restart the cursor at
+	// the selection instant so no packages spawn for the pre-selection gap.
+	if now.After(s.lastGeneration) {
+		s.lastGeneration = now
+	}
 
 	return office, s.cash, nil
+}
+
+// upperFirst upper-cases the first rune of a lowercase type name for transaction
+// descriptions ("small" -> "Small").
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	if r[0] >= 'a' && r[0] <= 'z' {
+		r[0] = r[0] - 'a' + 'A'
+	}
+	return string(r)
 }
 
 // computeNextRentDue returns the canonical next-rent-due instant for an office selected at
