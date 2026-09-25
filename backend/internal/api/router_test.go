@@ -15,7 +15,7 @@ func TestNewRouterBuildsWithoutExternalServices(t *testing.T) {
 	}
 }
 
-func TestUnimplementedRouteStaysUnderV1Boundary(t *testing.T) {
+func TestGameRouteIsRegisteredUnderV1Boundary(t *testing.T) {
 	router := NewRouter(game.NewInitialState())
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/game", nil)
@@ -23,7 +23,20 @@ func TestUnimplementedRouteStaysUnderV1Boundary(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/v1/game = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestUnknownRouteStaysUnderV1Boundary(t *testing.T) {
+	router := NewRouter(game.NewInitialState())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/does-not-exist", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
 	if w.Code != http.StatusNotFound {
-		t.Fatalf("GET /api/v1/game = %d, want 404 (not implemented yet)", w.Code)
+		t.Fatalf("GET /api/v1/does-not-exist = %d, want 404", w.Code)
 	}
 }

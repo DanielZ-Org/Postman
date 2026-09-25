@@ -37,15 +37,22 @@ type apiError struct {
 }
 
 // clockHandler serves the read-only GET /api/v1/clock endpoint and its three mutation
-// endpoints (SPEC 14.4). It holds a reference to the single authoritative clock; it never
-// owns a copy of mutable game state and performs no working-hour or weekday calculations
-// itself — those live in the game layer.
+// endpoints (SPEC 14.4). It holds a reference to the authoritative game state; it
+// never owns a copy of mutable game state and performs no working-hour or weekday
+// calculations itself — those live in the game layer. Skip-to-next-opening routes
+// through the game layer so the skipped interval is processed by simulation
+// semantics (SPEC 14.4) rather than bypassed.
 type clockHandler struct {
-	clock *game.Clock
+	state *game.GameState
 }
 
-func newClockHandler(clock *game.Clock) *clockHandler {
-	return &clockHandler{clock: clock}
+func newClockHandler(state *game.GameState) *clockHandler {
+	return &clockHandler{state: state}
+}
+
+// clock returns the authoritative clock of the owned game state.
+func (h *clockHandler) clock() *game.Clock {
+	return h.state.Clock
 }
 
 // handle serves GET /api/v1/clock with the canonical "clock" wrapper. Unsupported methods
@@ -55,7 +62,7 @@ func (h *clockHandler) handle(w http.ResponseWriter, r *http.Request) {
 		writeMethodNotAllowed(w)
 		return
 	}
-	h.writeClock(w, h.clock.Snapshot())
+	h.writeClock(w, h.clock().Snapshot())
 }
 
 // handleSpeed serves POST /api/v1/clock/speed. It decodes a strict {"speed": <int>} body,
@@ -89,14 +96,14 @@ func (h *clockHandler) handleSpeed(w http.ResponseWriter, r *http.Request) {
 	}
 	speed, err := parseClockSpeed(rawSpeed)
 	if err != nil {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "field 'speed' must be an integer", map[string]any{"field": "speed"})
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "field 'speed' must be an integer", nil)
 		return
 	}
-	if err := h.clock.SetSpeed(speed); err != nil {
+	if err := h.clock().SetSpeed(speed); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "INVALID_CLOCK_SPEED", "speed must be one of the allowed values", map[string]any{"allowed": game.ValidSpeeds()})
 		return
 	}
-	h.writeClock(w, h.clock.Snapshot())
+	h.writeClock(w, h.clock().Snapshot())
 }
 
 // handlePause serves POST /api/v1/clock/pause. It decodes a strict {"paused": <bool>} body
@@ -133,8 +140,8 @@ func (h *clockHandler) handlePause(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "field 'paused' must be a boolean", map[string]any{"field": "paused"})
 		return
 	}
-	h.clock.SetPaused(paused)
-	h.writeClock(w, h.clock.Snapshot())
+	h.clock().SetPaused(paused)
+	h.writeClock(w, h.clock().Snapshot())
 }
 
 // handleSkip serves POST /api/v1/clock/skip-to-next-opening. It accepts an empty body or {}
@@ -162,8 +169,8 @@ func (h *clockHandler) handleSkip(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.clock.SkipToNextOpening()
-	h.writeClock(w, h.clock.Snapshot())
+	h.state.SkipToNextOpening()
+	h.writeClock(w, h.clock().Snapshot())
 }
 
 // writeClock writes the updated clock snapshot under the canonical "clock" wrapper with HTTP 200.
@@ -196,7 +203,7 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string, deta
 
 // writeMethodNotAllowed writes the canonical 405 METHOD_NOT_ALLOWED JSON error.
 func writeMethodNotAllowed(w http.ResponseWriter) {
-	writeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed on this clock route", nil)
+	writeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed on this route", nil)
 }
 
 // readBody reads r.Body and returns the trimmed bytes of exactly one top-level JSON value, or a

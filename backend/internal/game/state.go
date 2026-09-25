@@ -1,11 +1,7 @@
-// Package game establishes the backend-owned application boundary for M1 game
-// state.
-//
-// It intentionally contains no package generation, delivery, finance or
-// persistence logic — those belong to later bounded Acts. The authoritative
-// in-memory clock is seeded from the canonical start time defined by SPEC (2.1)
-// and advanced deterministically; M1C makes it mutable and concurrency-safe but
-// introduces no background ticker or autonomous simulation loop.
+// Package game establishes the backend-owned application boundary for game state:
+// the authoritative clock, player, selected office, packages, employees, delivery
+// runs and finance records. All mutations are validated by game rules under one lock
+// before any state transition is committed; the API layer only transports JSON.
 package game
 
 import (
@@ -15,9 +11,25 @@ import (
 	"time"
 )
 
-// InitialGameTime is the canonical start time for a new M1 game (SPEC 2.1):
-// games begin on 1 February 1980 at 09:00 local game time.
+// InitialGameTime is the canonical start time for a new game (SPEC 2.1): games begin
+// on 1 February 1980 at 09:00 local game time.
 const InitialGameTime = "1980-02-01T09:00:00"
+
+// GameTimeFormat is the canonical wire/persistence format for fictional game
+// instants (e.g. "1980-02-01T09:00:00").
+const GameTimeFormat = "2006-01-02T15:04:05"
+
+// Game status values. "running" is the normal state; "game_over" (SPEC 4.2) is a
+// labelled temporary status name — the SPEC only says "the game ends" without naming
+// the status. Reaching it freezes all scheduled events and pauses the clock.
+const (
+	GameStatusRunning  = "running"
+	GameStatusGameOver = "game_over"
+)
+
+// startTime parses the canonical start instant once for statement periods and
+// simulation schedules. The constant is fixed and well-formed; parsing cannot fail.
+var startTime, _ = time.Parse(GameTimeFormat, "1980-02-01T09:00:00")
 
 // speedRates maps each allowed clock speed to its game-time advancement rate in
 // game seconds per one real second, from SPEC 2.2 (at 1x one real second advances
@@ -50,14 +62,14 @@ type Clock struct {
 	paused bool
 }
 
-// NewClock returns the canonical initial M1 clock state: start time from SPEC 2.1
-// (1 February 1980, 09:00), speed 1, not paused — consistent with the SPEC example
+// NewClock returns the canonical initial clock state: start time from SPEC 2.1
+// (1 February 1980, 09:00), speed 1, not paused - consistent with the SPEC example
 // clock state. It is a single authoritative instance shared by reference.
 func NewClock() *Clock {
 	// InitialGameTime is a fixed, well-formed constant (SPEC 2.1); parsing it cannot
 	// fail in practice. UTC is used only as an internal calendar representation of
-	// fictional game time — never the host wall clock.
-	t, _ := time.Parse("2006-01-02T15:04:05", InitialGameTime)
+	// fictional game time - never the host wall clock.
+	t, _ := time.Parse(GameTimeFormat, "1980-02-01T09:00:00")
 	return &Clock{now: t, speed: 1, paused: false}
 }
 
@@ -75,14 +87,14 @@ type ClockSnapshot struct {
 }
 
 // Snapshot returns a read-only view of the current clock. It takes an internal read
-// lock, computes derived fields, and releases the lock before returning — so no lock
+// lock, computes derived fields, and releases the lock before returning - so no lock
 // is held during any downstream (e.g., HTTP JSON) encoding. Repeated snapshots do not
 // change state.
 func (c *Clock) Snapshot() ClockSnapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return ClockSnapshot{
-		GameDatetime:         c.now.Format("2006-01-02T15:04:05"),
+		GameDatetime:         c.now.Format(GameTimeFormat),
 		DayOfWeek:            weekdayName(c.now),
 		Speed:                c.speed,
 		Paused:               c.paused,
@@ -126,8 +138,8 @@ func (c *Clock) SetSpeed(speed int) error {
 // Advance deterministically advances game time by the given real-world elapsed duration
 // at the current configured speed. A paused clock does not advance, and a non-positive
 // elapsed is a no-op. It uses no wall clock, sleep, ticker or goroutine: a
-// deterministic input yields a deterministic result. This primitive will later be driven
-// by a simulation loop; M1C contains no such loop.
+// deterministic input yields a deterministic result. The simulation loop drives it
+// with real elapsed time between ticks.
 func (c *Clock) Advance(elapsed time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -147,21 +159,40 @@ func (c *Clock) Advance(elapsed time.Duration) {
 
 // SkipToNextOpening advances game time to the earliest upcoming office opening per SPEC
 // 2.4 working hours. If the office is currently open it is a safe no-op (game time,
-// speed and paused state are all preserved). It changes only game date/time; it preserves
-// speed and paused state and uses no wall clock.
+// speed and paused state are all preserved). It changes only game date/time; it
+// preserves speed and paused state and uses no wall clock.
 func (c *Clock) SkipToNextOpening() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if officeOpen(c.now) {
-		return // currently open → safe no-op
+		return // currently open - safe no-op
 	}
 	c.now = nextOpeningInstant(c.now)
 }
 
+// parts returns the raw clock fields under a read lock (used by snapshotting, which
+// already holds the owning GameState lock and must not recurse into Snapshot's
+// derived fields).
+func (c *Clock) parts() (time.Time, int, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now, c.speed, c.paused
+}
+
+// restore replaces the clock's authoritative fields (used when loading persisted
+// state; the caller holds the owning GameState lock).
+func (c *Clock) restore(now time.Time, speed int, paused bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = now
+	c.speed = speed
+	c.paused = paused
+}
+
 // openingInterval returns the [startMin, endMin) working-hours interval for a weekday per
-// SPEC 2.4 (Mon–Fri 09:00–17:00, Sat 10:00–13:00), or hasOpening=false for Sunday.
-// Intervals are half-open [opening, closing): exactly at opening → open; exactly at
-// closing → closed.
+// SPEC 2.4 (Mon-Fri 09:00-17:00, Sat 10:00-13:00), or hasOpening=false for Sunday.
+// Intervals are half-open [opening, closing): exactly at opening - open; exactly at
+// closing - closed.
 func openingInterval(wd time.Weekday) (startMin, endMin int, hasOpening bool) {
 	switch wd {
 	case time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday:
@@ -181,6 +212,17 @@ func officeOpen(t time.Time) bool {
 	}
 	now := t.Hour()*60 + t.Minute()
 	return now >= startMin && now < endMin
+}
+
+// closingInstantToday returns today's closing time, or hasClosing=false when the
+// office has no opening today (Sunday).
+func closingInstantToday(t time.Time) (time.Time, bool) {
+	_, endMin, has := openingInterval(t.Weekday())
+	if !has {
+		return time.Time{}, false
+	}
+	midnight := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	return midnight.Add(time.Duration(endMin) * time.Minute), true
 }
 
 // nextOpeningInstant returns the earliest office-opening instant strictly after t. It is
@@ -230,26 +272,87 @@ func daysUntilNext(t time.Time, target time.Weekday) int {
 	return (int(target) - int(t.Weekday()) + 7) % 7
 }
 
-// StartingCash is the canonical starting player cash for a new M1 game (SPEC 4.3): £1000,
+// dayKey returns the calendar-date key ("2006-01-02") used to detect game-day
+// rollovers for daily counters.
+func dayKey(t time.Time) string {
+	return t.Format("2006-01-02")
+}
+
+// StartingCash is the canonical starting player cash for a new game (SPEC 4.3): £1000,
 // represented as integer pounds.
 const StartingCash = 1000
 
 // GameState is the authoritative in-memory game state created at backend startup when no
-// persisted game exists yet. It owns exactly one authoritative clock plus the selected office
-// (initially none), the current cash balance, and a minimal in-memory finance transaction list.
-// All mutable fields are guarded by mu; use *GameState (a reference) everywhere — never copy it.
+// persisted game exists yet. It owns the clock, player, selected office, packages,
+// employees, delivery runs, finance records and the scheduling cursors the simulation
+// advances. All mutable fields are guarded by mu; use *GameState (a reference)
+// everywhere - never copy it. Lock order: GameState.mu may be held while taking a
+// Clock lock; never the reverse.
 type GameState struct {
-	mu             sync.Mutex     // guards selectedOffice/cash/transactions; never copy a GameState by value
-	Clock          *Clock         // authoritative clock (owns its own lock); see SelectOffice for lock ordering
-	selectedOffice *RuntimeOffice // nil until an office is selected (one-time in M1)
+	mu             sync.Mutex // guards every mutable field below; never copy a GameState by value
+	Clock          *Clock     // authoritative clock (owns its own lock)
+	player         Player
+	selectedOffice *RuntimeOffice // nil until an office is selected
 	cash           int            // authoritative cash balance, integer pounds (starts at StartingCash)
-	transactions   []Transaction  // minimal in-memory finance records (M1D: office down payments only)
+	transactions   []Transaction
+	packages       []*Package
+	employees      []*Employee
+	runs           []*Run
+	status         string // GameStatusRunning or GameStatusGameOver
+
+	nextTxnID  int // 1-based; the initial loan transaction consumes 1
+	nextPkgSeq int // 1-based package id sequence
+	nextEmpSeq int // 1-based employee id sequence
+	totalHires int // lifetime hire counter driving the hiring fee (SPEC 8)
+
+	lastGeneration time.Time // package-generation cursor (30-minute grid)
+	interestDue    time.Time // next four-week loan-interest instant (SPEC 11.1)
+	payrollDue     time.Time // next Tuesday payroll instant (SPEC 11.2)
+
+	deliveredToday    int // packages delivered on deliveredTodayKey (game date)
+	deliveredTodayKey string
+	dailyRevenue      int // revenue accrued on dailyRevenueKey; settled at day rollover
+	dailyRevenueKey   string
 }
 
-// NewInitialState returns the default M1 game state seeded from the canonical start time and
-// starting cash defined by SPEC.
+// NewInitialState returns the default game state seeded from the canonical start
+// time and starting cash defined by SPEC, with the initial loan transaction on
+// record and all schedules (generation cursor, first interest, first payroll) set.
 func NewInitialState() *GameState {
-	return &GameState{Clock: NewClock(), cash: StartingCash}
+	s := &GameState{
+		Clock:             NewClock(),
+		player:            defaultPlayer,
+		cash:              StartingCash,
+		status:            GameStatusRunning,
+		nextTxnID:         1,
+		lastGeneration:    startTime,
+		interestDue:       startTime.AddDate(0, 0, intervalWeeks*7),
+		payrollDue:        nextPayrollInstant(startTime),
+		deliveredTodayKey: dayKey(startTime),
+		dailyRevenueKey:   dayKey(startTime),
+	}
+	// The starting loan is the opening condition, not a mutation: cash is seeded at
+	// StartingCash and the disbursement transaction records why.
+	s.transactions = []Transaction{{
+		ID:           txnID(1),
+		GameDatetime: InitialGameTime,
+		Category:     CategoryLoanDisbursement,
+		Amount:       StartingCash,
+		Description:  "Starting loan",
+		ReferenceID:  loanReferenceID,
+	}}
+	return s
+}
+
+// nextPayrollInstant returns the first payroll moment (Tuesday 09:00, SPEC 11.2)
+// strictly after from.
+func nextPayrollInstant(from time.Time) time.Time {
+	days := (int(payrollWeekday) - int(from.Weekday()) + 7) % 7
+	day := time.Date(from.Year(), from.Month(), from.Day()+days, payrollHour, 0, 0, 0, from.Location())
+	if !day.After(from) {
+		day = day.AddDate(0, 0, 7)
+	}
+	return day
 }
 
 // SelectedOffice returns the currently selected office, or nil if none has been selected yet.
@@ -274,4 +377,11 @@ func (s *GameState) Transactions() []Transaction {
 	out := make([]Transaction, len(s.transactions))
 	copy(out, s.transactions)
 	return out
+}
+
+// Status returns the current game status ("running" or "game_over").
+func (s *GameState) Status() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status
 }

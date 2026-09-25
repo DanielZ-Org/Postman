@@ -120,9 +120,11 @@ export function OfficeSelect({ game }: { game: GameApi }) {
       {game.offices.every((office) => cash < office.down_payment) && (
         <div className="office-broke">
           <p className="empty-state">Not enough cash for any office contract.</p>
-          <button type="button" className="btn btn-primary" onClick={() => void game.resetGame()}>
-            Start a new game
-          </button>
+          {import.meta.env.MODE === 'mock' && (
+            <button type="button" className="btn btn-primary" onClick={() => void game.resetGame()}>
+              Start a new game
+            </button>
+          )}
         </div>
       )}
     </section>

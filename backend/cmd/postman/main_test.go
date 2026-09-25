@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestDefaultListenAddr(t *testing.T) {
 	got := resolveListenAddr(func(string) string { return "" })
@@ -51,4 +57,57 @@ func TestIsAllInterfaceBind(t *testing.T) {
 			t.Errorf("isAllInterfaceBind(%q) = %v, want %v", addr, got, want)
 		}
 	}
+}
+
+func TestDefaultDBPath(t *testing.T) {
+	if got := resolveDBPath(func(string) string { return "" }); got != defaultDBPath {
+		t.Fatalf("default db path = %q, want %q", got, defaultDBPath)
+	}
+	if got := resolveDBPath(func(string) string { return "   " }); got != defaultDBPath {
+		t.Fatalf("blank db path = %q, want %q", got, defaultDBPath)
+	}
+	if got := resolveDBPath(func(k string) string {
+		if k == "POSTMAN_DB_PATH" {
+			return " C:/games/save.db "
+		}
+		return ""
+	}); got != "C:/games/save.db" {
+		t.Fatalf("override db path = %q, want C:/games/save.db", got)
+	}
+}
+
+func TestSetupLogToFileRoutesOutput(t *testing.T) {
+	oldOutput := log.Writer()
+	defer log.SetOutput(oldOutput)
+
+	logPath := filepath.Join(t.TempDir(), "logs", "postman.log")
+	closeLog := setupLogToFile(logPath)
+	log.Print("marker-line-for-log-file")
+	closeLog()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
+	if !strings.Contains(string(data), "marker-line-for-log-file") {
+		t.Errorf("log file does not contain the marker: %s", data)
+	}
+}
+
+func TestSetupLogToFileFallsBackWhenUnusable(t *testing.T) {
+	oldOutput := log.Writer()
+	defer log.SetOutput(oldOutput)
+
+	// A regular file where a directory must go: creating the parent fails and
+	// logging must fall back to stderr instead of crashing.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seed blocker: %v", err)
+	}
+	closeLog := setupLogToFile(filepath.Join(blocker, "sub", "postman.log"))
+	if closeLog == nil {
+		t.Fatal("setupLogToFile returned nil closer")
+	}
+	log.Print("still-routes-to-stderr")
+	closeLog()
 }
