@@ -68,7 +68,7 @@ func (s *GameState) EmployeesView() ([]Employee, HiringState) {
 	out := make([]Employee, 0, len(s.employees))
 	for _, e := range s.employees {
 		cp := *e
-		cp.Skills = append([]string(nil), e.Skills...)
+		cp.Skills = append([]string{}, e.Skills...)
 		out = append(out, cp)
 	}
 	return out, s.hiringStateLocked()
@@ -106,6 +106,6 @@ func (s *GameState) SelectedOfficeView() *RuntimeOffice {
 		return nil
 	}
 	cp := *s.selectedOffice
-	cp.AcceptedPackageSizes = append([]string(nil), s.selectedOffice.AcceptedPackageSizes...)
+	cp.AcceptedPackageSizes = append([]string{}, s.selectedOffice.AcceptedPackageSizes...)
 	return &cp
 }

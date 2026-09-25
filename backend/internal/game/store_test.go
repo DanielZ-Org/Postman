@@ -75,7 +75,7 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 		got, want := restored.employees[i], s.employees[i]
 		if got.ID != want.ID || got.Status != want.Status || got.RunsToday != want.RunsToday ||
 			got.AccruedWages != want.AccruedWages || got.PackagesDeliveredThisWeek != want.PackagesDeliveredThisWeek ||
-			got.RunsTodayKey != want.RunsTodayKey || len(got.Skills) != len(want.Skills) {
+			got.RunsTodayKey != want.RunsTodayKey || got.Skills == nil || len(got.Skills) != len(want.Skills) {
 			t.Errorf("employee[%d] = %+v, want %+v", i, *got, *want)
 		}
 	}

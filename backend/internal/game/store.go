@@ -87,7 +87,7 @@ func (s *GameState) Snapshot() *Snapshot {
 	}
 	if s.selectedOffice != nil {
 		office := *s.selectedOffice
-		office.AcceptedPackageSizes = append([]string(nil), s.selectedOffice.AcceptedPackageSizes...)
+		office.AcceptedPackageSizes = append([]string{}, s.selectedOffice.AcceptedPackageSizes...)
 		snap.Office = &office
 	}
 	snap.Packages = make([]*Package, 0, len(s.packages))
@@ -107,14 +107,14 @@ func (s *GameState) Snapshot() *Snapshot {
 	snap.Employees = make([]*Employee, 0, len(s.employees))
 	for _, e := range s.employees {
 		cp := *e
-		cp.Skills = append([]string(nil), e.Skills...)
+		cp.Skills = append([]string{}, e.Skills...)
 		snap.Employees = append(snap.Employees, &cp)
 	}
 	snap.Runs = make([]SnapshotRun, 0, len(s.runs))
 	for _, r := range s.runs {
 		snap.Runs = append(snap.Runs, SnapshotRun{
 			EmployeeID: r.EmployeeID,
-			PackageIDs: append([]string(nil), r.PackageIDs...),
+			PackageIDs: append([]string{}, r.PackageIDs...),
 			Phase:      r.Phase,
 			PhaseEnd:   r.PhaseEnd.Format(GameTimeFormat),
 		})
@@ -158,7 +158,7 @@ func (s *GameState) Restore(snap *Snapshot) error {
 		}
 		runs = append(runs, &Run{
 			EmployeeID: r.EmployeeID,
-			PackageIDs: append([]string(nil), r.PackageIDs...),
+			PackageIDs: append([]string{}, r.PackageIDs...),
 			Phase:      r.Phase,
 			PhaseEnd:   end,
 		})
@@ -174,7 +174,7 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	s.selectedOffice = snap.Office
 	if s.selectedOffice != nil {
 		office := *snap.Office
-		office.AcceptedPackageSizes = append([]string(nil), snap.Office.AcceptedPackageSizes...)
+		office.AcceptedPackageSizes = append([]string{}, snap.Office.AcceptedPackageSizes...)
 		s.selectedOffice = &office
 	}
 	s.packages = snap.Packages

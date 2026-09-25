@@ -16,14 +16,24 @@ func selectSmallOffice(t *testing.T, h http.Handler) {
 	}
 }
 
-// hireOne performs a single hire and asserts success.
+// hireOne performs a single hire and asserts success, including that the
+// response never serialises skills as null (frontend contract: skills is a
+// string array, [] when empty).
 func hireOne(t *testing.T, h http.Handler) map[string]any {
 	t.Helper()
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/employees/hire", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("hire = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	return decodeJSON(t, rec.Body.Bytes())
+	body := decodeJSON(t, rec.Body.Bytes())
+	emp, ok := body["employee"].(map[string]any)
+	if !ok {
+		t.Fatalf("hire response has no 'employee' object: %v", body)
+	}
+	if emp["skills"] == nil {
+		t.Errorf("hire employee skills = nil, want [] (never null): %v", emp)
+	}
+	return body
 }
 
 // advanceGame advances the authoritative clock by the given real duration at the
@@ -171,6 +181,9 @@ func TestGetEmployeesShape(t *testing.T) {
 		if _, present := emp[key]; !present {
 			t.Errorf("employee missing %q: %v", key, emp)
 		}
+	}
+	if emp["skills"] == nil {
+		t.Errorf("employee skills = nil, want [] (never null): %v", emp)
 	}
 	hiring = body["hiring"].(map[string]any)
 	if hiring["current_employee_count"] != float64(1) || hiring["next_hiring_fee"] != float64(100) {
