@@ -79,6 +79,10 @@ function OfficeCard({
 
 export function OfficeSelect({ game }: { game: GameApi }) {
   const cash = game.state?.player.cash ?? 0
+  // SPEC 4.2: a terminated contract frees the head-office slot, so this screen is both
+  // the first contract and the re-entry path. The runtime office is what tells the two
+  // apart — /game reports no office in either case.
+  const terminated = game.office?.contract_status === 'terminated' ? game.office : null
 
   const handleSelect = (officeId: string) => {
     void game.selectOffice(officeId)
@@ -97,7 +101,7 @@ export function OfficeSelect({ game }: { game: GameApi }) {
     <section className="panel office-select">
       <div className="panel-head">
         <div>
-          <h2>Choose your head office</h2>
+          <h2>{terminated ? 'Sign a new head office' : 'Choose your head office'}</h2>
           <p className="muted">
             The down payment includes the first {game.offices[0]?.rent_prepaid_weeks ?? 4} weeks of rent.
           </p>
@@ -107,6 +111,27 @@ export function OfficeSelect({ game }: { game: GameApi }) {
           <span className="cash-value">{formatMoney(cash)}</span>
         </div>
       </div>
+      {terminated && (
+        <div className="notice notice-danger" role="status">
+          <span className="notice-icon" aria-hidden>
+            ⚠
+          </span>
+          <div className="notice-body">
+            <strong>Your {terminated.type} office contract was terminated.</strong>
+            <p className="muted">
+              {terminated.missed_rent_payments >= 2
+                ? `${terminated.missed_rent_payments} rent payments were missed. `
+                : 'Rent payments were missed. '}
+              Sign a new contract to keep trading. The old down payment is not refunded
+              {game.employees.length > 0 &&
+                `, and you keep the ${game.employees.length} courier${
+                  game.employees.length === 1 ? '' : 's'
+                } you already hired`}
+              .
+            </p>
+          </div>
+        </div>
+      )}
       <div className="office-grid">
         {game.offices.map((office) => (
           <OfficeCard

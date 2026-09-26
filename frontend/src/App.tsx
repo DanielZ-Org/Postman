@@ -3,6 +3,7 @@ import { useGame } from './hooks/useGame'
 import { TopBar } from './components/TopBar'
 import { ErrorBanner } from './components/ErrorBanner'
 import { OfficeSelect } from './components/OfficeSelect'
+import { GameOverPanel } from './components/GameOverPanel'
 import { OverviewPanel } from './components/OverviewPanel'
 import { PackagesPanel } from './components/PackagesPanel'
 import { EmployeesPanel } from './components/EmployeesPanel'
@@ -51,7 +52,11 @@ function App() {
     <div className="app">
       <TopBar game={game} />
 
-      {!office ? (
+      {game.gameOver ? (
+        <main className="app-main">
+          <GameOverPanel game={game} />
+        </main>
+      ) : !office ? (
         <main className="app-main">
           <OfficeSelect game={game} />
         </main>

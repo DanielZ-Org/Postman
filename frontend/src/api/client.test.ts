@@ -190,6 +190,71 @@ describe('api.getOffices', () => {
   })
 })
 
+describe('api.getOffice', () => {
+  it('parses the SPEC 4.1 runtime office with its contract status', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { office: makeOffice() })))
+    const office = await api.getOffice()
+    expect(office?.id).toBe('office-small-01')
+    expect(office?.contract_status).toBe('active')
+    expect(office?.missed_rent_payments).toBe(0)
+    expect(office?.storage.current_capacity).toBe(100)
+  })
+
+  it('parses the Go storage key set (base/current/max/used)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          office: {
+            id: 'office-small-01',
+            type: 'small',
+            is_head_office: true,
+            down_payment: 350,
+            weekly_rent: 50,
+            rent_prepaid_weeks: 4,
+            next_rent_due: '',
+            storage: { base: 100, current: 100, max: 150, used: 6 },
+            employee_capacity: 5,
+            bicycle_capacity: 5,
+            vehicle_capacity: 1,
+            accepted_package_sizes: ['small'],
+            contract_status: 'terminated',
+            missed_rent_payments: 2,
+          },
+        }),
+      ),
+    )
+    const office = await api.getOffice()
+    expect(office?.storage.used_units).toBe(6)
+    expect(office?.storage.maximum_capacity).toBe(150)
+    expect(office?.contract_status).toBe('terminated')
+    expect(office?.missed_rent_payments).toBe(2)
+  })
+
+  it('returns null before an office is selected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { office: null })))
+    await expect(api.getOffice()).resolves.toBeNull()
+  })
+
+  it('returns null when the route is missing', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(404, '404 page not found')))
+    await expect(api.getOffice()).resolves.toBeNull()
+  })
+
+  it('rejects a payload without contract_status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { office: { id: 'office-small-01' } })),
+    )
+    await expect(api.getOffice()).rejects.toMatchObject({ code: 'UNEXPECTED_RESPONSE' })
+  })
+
+  it('rejects a payload without the office wrapper', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { nope: true })))
+    await expect(api.getOffice()).rejects.toMatchObject({ code: 'UNEXPECTED_RESPONSE' })
+  })
+})
+
 describe('api.selectOffice', () => {
   it('parses Go {office, cash_balance} response', async () => {
     vi.stubGlobal(

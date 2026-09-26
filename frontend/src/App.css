@@ -1129,6 +1129,88 @@
   border-top: 1px solid var(--border);
 }
 
+/* ---------- Notices ---------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+}
+
+.notice-danger {
+  border-color: var(--negative);
+}
+
+.notice-icon {
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.notice-body p {
+  font-size: 0.85rem;
+}
+
+/* ---------- Game over ---------- */
+
+.game-over {
+  gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  border-color: var(--negative);
+}
+
+.game-over-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.game-over-mark {
+  font-size: 1.6rem;
+  line-height: 1.2;
+}
+
+.game-over-reason {
+  margin-top: 6px;
+  font-size: 0.92rem;
+}
+
+.game-over-stats {
+  margin-top: 10px;
+}
+
+.game-over-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.game-over-reset-note {
+  font-size: 0.85rem;
+}
+
+.game-over-reset-note code {
+  font-size: 0.8rem;
+  color: var(--accent-text);
+}
+
+/* Same outline treatment as the open/closed badge: coloured text on the dark bar.
+   Filled red only reaches 3.35:1 against white, which fails WCAG AA. */
+.open-badge.is-game-over {
+  color: var(--negative);
+  border-color: var(--negative);
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 720px) {
