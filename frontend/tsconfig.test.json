@@ -18,5 +18,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["tests", "e2e", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["tests", "e2e", "e2e-backend", "vitest.config.ts", "playwright.config.ts", "playwright.backend.config.ts"]
 }

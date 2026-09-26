@@ -15,6 +15,7 @@
     "test:api": "vitest run tests/api-contract.test.ts",
     "test:unit": "vitest run src",
     "test:e2e": "cross-env PLAYWRIGHT_BROWSERS_PATH=.pw-browsers playwright test",
+    "test:e2e:backend": "cross-env PLAYWRIGHT_BROWSERS_PATH=.pw-browsers playwright test --config playwright.backend.config.ts",
     "test:e2e:install": "cross-env PLAYWRIGHT_BROWSERS_PATH=.pw-browsers playwright install chromium",
     "test:all": "npm run lint && npm run test && npm run build && npm run test:e2e"
   },

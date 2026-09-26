@@ -62,7 +62,7 @@ var officeCatalogue = []OfficeDefinition{
 func OfficeDefinitions() []OfficeDefinition {
 	out := make([]OfficeDefinition, len(officeCatalogue))
 	for i, def := range officeCatalogue {
-		def.AcceptedPackageSizes = append([]string(nil), def.AcceptedPackageSizes...)
+		def.AcceptedPackageSizes = append([]string{}, def.AcceptedPackageSizes...)
 		out[i] = def
 	}
 	return out
@@ -190,7 +190,7 @@ func (s *GameState) SelectOffice(officeID string) (*RuntimeOffice, int, error) {
 		EmployeeCapacity:     def.EmployeeCapacity,
 		BicycleCapacity:      def.BicycleCapacity,
 		VehicleCapacity:      def.VehicleCapacity,
-		AcceptedPackageSizes: append([]string(nil), def.AcceptedPackageSizes...),
+		AcceptedPackageSizes: append([]string{}, def.AcceptedPackageSizes...),
 		ContractStatus:       ContractActive,
 		MissedRentPayments:   0,
 	}
