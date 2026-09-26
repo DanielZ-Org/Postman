@@ -6,6 +6,7 @@ import type {
   FinanceStatement,
   GameState,
   HiringState,
+  Office,
   OfficeOffer,
   Package,
   Transaction,
@@ -30,6 +31,7 @@ function isMissingRoute(err: unknown): boolean {
 export function useGame() {
   const [clock, setClock] = useState<ClockState | null>(null)
   const [state, setState] = useState<GameState | null>(null)
+  const [office, setOffice] = useState<Office | null>(null)
   const [offices, setOffices] = useState<OfficeOffer[]>([])
   const [packages, setPackages] = useState<Package[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -47,6 +49,7 @@ export function useGame() {
     const results = await Promise.allSettled([
       api.getClock(),
       api.getGame(),
+      api.getOffice(),
       api.getOffices(),
       api.getPackages(),
       api.getEmployees(),
@@ -54,12 +57,15 @@ export function useGame() {
       api.getTransactions(),
     ])
 
-    const [clockResult, gameStateResult, officesResult, packagesResult, employeesResult, financeResult, transactionsResult] =
+    const [clockResult, gameStateResult, officeResult, officesResult, packagesResult, employeesResult, financeResult, transactionsResult] =
       results
 
     if (clockResult.status === 'fulfilled') {
       clockRef.current = clockResult.value
       setClock(clockResult.value)
+    }
+    if (officeResult.status === 'fulfilled') {
+      setOffice(officeResult.value)
     }
     if (officesResult.status === 'fulfilled') {
       setOffices(officesResult.value)
@@ -207,9 +213,16 @@ export function useGame() {
     }
   }, [refresh])
 
+  // SPEC 4.2: the run ends when the contract is not active and no new contract can be
+  // afforded. A terminated contract that is still affordable frees the head-office slot
+  // instead, so the UI offers re-selection — OfficeSelect reads that from
+  // office.contract_status, which is the only place the backend reports it.
+  const gameOver = state?.game.status === 'game_over'
+
   return {
     clock,
     state,
+    office,
     offices,
     packages,
     employees,
@@ -219,6 +232,7 @@ export function useGame() {
     error,
     loaded,
     selection,
+    gameOver,
     dismissError,
     refresh,
     setSpeed,

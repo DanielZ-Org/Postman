@@ -133,6 +133,95 @@ describe('POST /offices/select', () => {
   })
 })
 
+describe('GET /office and contract termination (SPEC 4.1/4.2)', () => {
+  it('returns a null office before a selection', async () => {
+    const res = await apiFetch('/office')
+    expect(res.status).toBe(200)
+    const body = (await readJson(res)) as Record<string, unknown>
+    expect(body.office).toBeNull()
+  })
+
+  it('returns the active runtime office after a selection', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    const res = await apiFetch('/office')
+    const body = (await readJson(res)) as { office: Record<string, unknown> | null }
+    expect(body.office).toBeTruthy()
+    expect(body.office?.id).toBe('office-small-01')
+    expect(body.office?.contract_status).toBe('active')
+    expect(body.office?.missed_rent_payments).toBe(0)
+    expect(body.office?.is_head_office).toBe(true)
+  })
+
+  it('keeps a terminated contract out of /game but visible on /office', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    const terminate = await post('/debug/terminate-contract')
+    expect(terminate.status).toBe(200)
+
+    const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
+    expect(game.office).toBeNull()
+    expect((game.game as Record<string, unknown>).status).toBe('running')
+
+    const body = (await readJson(await apiFetch('/office'))) as { office: Record<string, unknown> | null }
+    expect(body.office?.contract_status).toBe('terminated')
+    expect(body.office?.missed_rent_payments).toBe(2)
+  })
+
+  it('lets the player re-select a contract after termination (re-entry rule)', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/debug/terminate-contract')
+
+    const res = await post('/offices/select', { office_id: 'office-large-01' })
+    expect(res.status).toBe(200)
+
+    const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
+    expect((game.office as Record<string, unknown> | null)?.id).toBe('office-large-01')
+    expect((game.game as Record<string, unknown>).status).toBe('running')
+  })
+
+  it('refuses a second selection while the contract is active', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    const res = await post('/offices/select', { office_id: 'office-large-01' })
+    expect(res.status).toBe(409)
+    const body = (await readJson(res)) as ErrorBody
+    expect(body.error?.code).toBe('OFFICE_ALREADY_SELECTED')
+  })
+
+  it('ends the game when a terminated contract can no longer be replaced', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/debug/terminate-contract')
+    await post('/debug/bankrupt')
+
+    const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
+    expect((game.game as Record<string, unknown>).status).toBe('game_over')
+    expect(game.office).toBeNull()
+
+    const clock = (await readJson(await apiFetch('/clock'))) as Record<string, unknown>
+    expect(clock.paused).toBe(true)
+  })
+
+  it('rejects hiring, assigning, and re-selecting after game over', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/debug/terminate-contract')
+    await post('/debug/bankrupt')
+
+    const hire = await post('/employees/hire')
+    expect(hire.status).toBe(409)
+    expect(((await readJson(hire)) as ErrorBody).error?.code).toBe('NO_OFFICE')
+
+    const select = await post('/offices/select', { office_id: 'office-small-01' })
+    expect(select.status).toBe(409)
+    expect(((await readJson(select)) as ErrorBody).error?.code).toBe('GAME_OVER')
+  })
+
+  it('refuses to terminate twice or without an office', async () => {
+    expect((await post('/debug/terminate-contract')).status).toBe(409)
+
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/debug/terminate-contract')
+    expect((await post('/debug/terminate-contract')).status).toBe(409)
+  })
+})
+
 describe('GET /packages', () => {
   it('returns package rows with SPEC status vocabulary', async () => {
     await post('/offices/select', { office_id: 'office-small-01' })

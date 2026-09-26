@@ -7,6 +7,9 @@ export function TopBar({ game }: { game: GameApi }) {
   const clock = game.clock
   const cash = game.state?.player.cash ?? 0
   const trait = game.state?.player.trait
+  // Once the run is over the clock is frozen by the backend and every clock mutation
+  // is rejected, so the controls are replaced by a status badge instead of left to fail.
+  const finished = game.gameOver
 
   const handleSpeed = (speed: (typeof SPEEDS)[number]) => {
     void game.setSpeed(speed)
@@ -31,35 +34,43 @@ export function TopBar({ game }: { game: GameApi }) {
         <span className="topbar-datetime">
           {clock ? formatGameDateTime(clock.game_datetime) : '—'}
         </span>
-        {clock && (
-          <span className={`open-badge ${clock.office_open ? 'is-open' : 'is-closed'}`}>
-            {clock.office_open ? 'Open' : 'Closed'} · {capitalize(clock.day_of_week)}
-          </span>
+        {finished ? (
+          <span className="open-badge is-game-over">Game over</span>
+        ) : (
+          clock && (
+            <span className={`open-badge ${clock.office_open ? 'is-open' : 'is-closed'}`}>
+              {clock.office_open ? 'Open' : 'Closed'} · {capitalize(clock.day_of_week)}
+            </span>
+          )
         )}
       </div>
 
       <div className="topbar-controls">
-        <button
-          type="button"
-          className={`ctl-btn ${clock?.paused ? 'is-active' : ''}`}
-          onClick={handlePause}
-          title={clock?.paused ? 'Resume' : 'Pause'}
-        >
-          {clock?.paused ? '▶' : '❚❚'}
-        </button>
-        {SPEEDS.map((speed) => (
-          <button
-            key={speed}
-            type="button"
-            className={`ctl-btn ${clock && !clock.paused && clock.speed === speed ? 'is-active' : ''}`}
-            onClick={() => handleSpeed(speed)}
-          >
-            {speed}×
-          </button>
-        ))}
-        <button type="button" className="ctl-btn ctl-skip" onClick={handleSkip} title="Skip to next opening">
-          Skip →
-        </button>
+        {!finished && (
+          <>
+            <button
+              type="button"
+              className={`ctl-btn ${clock?.paused ? 'is-active' : ''}`}
+              onClick={handlePause}
+              title={clock?.paused ? 'Resume' : 'Pause'}
+            >
+              {clock?.paused ? '▶' : '❚❚'}
+            </button>
+            {SPEEDS.map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                className={`ctl-btn ${clock && !clock.paused && clock.speed === speed ? 'is-active' : ''}`}
+                onClick={() => handleSpeed(speed)}
+              >
+                {speed}×
+              </button>
+            ))}
+            <button type="button" className="ctl-btn ctl-skip" onClick={handleSkip} title="Skip to next opening">
+              Skip →
+            </button>
+          </>
+        )}
         {import.meta.env.MODE === 'mock' && (
           <button
             type="button"
@@ -78,7 +89,7 @@ export function TopBar({ game }: { game: GameApi }) {
         {trait && <span className="trait-chip">{capitalize(String(trait))}</span>}
       </div>
 
-      {clock && (
+      {clock && !finished && (
         <div className="topbar-countdowns">
           <span className="countdown">
             Payroll <strong>{clock.days_until_next_payroll}d</strong>

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { OfficeSelect } from './OfficeSelect'
 import type { GameApi } from '../hooks/useGame'
-import { makeGameApi, makeGameState, makeOfficeOffer } from '../test/factories'
+import { makeGameApi, makeGameState, makeOffice, makeOfficeOffer } from '../test/factories'
 
 describe('OfficeSelect', () => {
   it('shows loading state when offices are empty', () => {
@@ -75,5 +75,26 @@ describe('OfficeSelect', () => {
     await user.click(screen.getByRole('button', { name: 'Start a new game' }))
     expect(game.resetGame).toHaveBeenCalledTimes(1)
     vi.unstubAllEnvs()
+  })
+
+  it('explains a terminated contract and re-offers the office cards', () => {
+    const game = makeGameApi({
+      state: makeGameState({ office: null }),
+      office: makeOffice({ contract_status: 'terminated', missed_rent_payments: 2 }),
+    })
+    render(<OfficeSelect game={game} />)
+
+    expect(screen.getByRole('heading', { name: 'Sign a new head office' })).toBeInTheDocument()
+    expect(screen.getByText('Your small office contract was terminated.')).toBeInTheDocument()
+    expect(screen.getByText(/2 rent payments were missed/)).toBeInTheDocument()
+    expect(screen.getByText(/old down payment is not refunded/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Small Office' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Select office' })).toHaveLength(2)
+  })
+
+  it('does not claim a termination before one has happened', () => {
+    render(<OfficeSelect game={makeGameApi({ state: makeGameState({ office: null }), office: null })} />)
+    expect(screen.getByRole('heading', { name: 'Choose your head office' })).toBeInTheDocument()
+    expect(screen.queryByText(/contract was terminated/)).not.toBeInTheDocument()
   })
 })

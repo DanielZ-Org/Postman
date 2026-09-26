@@ -85,4 +85,22 @@ describe('TopBar', () => {
     const cash = screen.getByText('-£120.00')
     expect(cash).toHaveClass('is-negative')
   })
+
+  it('replaces the clock controls with a game over badge once the run ends', () => {
+    render(
+      <TopBar
+        game={makeGameApi({
+          gameOver: true,
+          state: makeGameState({ game: { status: 'game_over', game_datetime: '1980-03-08T16:30:00.000Z', speed: 1 } }),
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Game over')).toBeInTheDocument()
+    expect(screen.queryByTitle('Pause')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Skip to next opening')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '3×' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Payroll')).not.toBeInTheDocument()
+    expect(screen.queryByText('Rent')).not.toBeInTheDocument()
+  })
 })

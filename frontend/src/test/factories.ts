@@ -209,6 +209,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
   return {
     clock: makeClock(),
     state: makeGameState(),
+    office: makeOffice(),
     offices: [
       makeOfficeOffer({ id: 'office-small-01' }),
       makeOfficeOffer({
@@ -238,6 +239,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
     error: null,
     loaded: true,
     selection: null,
+    gameOver: false,
     dismissError: mockFn<GameApi['dismissError']>(),
     refresh: mockFn<GameApi['refresh']>(),
     setSpeed: mockFn<GameApi['setSpeed']>(),

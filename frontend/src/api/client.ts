@@ -4,6 +4,7 @@ import type {
   FinanceStatement,
   GameState,
   HiringState,
+  Office,
   OfficeOffer,
   Package,
   SelectOfficeResult,
@@ -284,6 +285,47 @@ function parseOfficeOffer(value: unknown, path: string): OfficeOffer {
   }
 }
 
+// parseRuntimeOffice parses the SPEC 4.1 selected-office representation. The storage
+// block is accepted in both the canonical key set (base_capacity/current_capacity/
+// maximum_capacity/used_units) and the Go wire key set (base/current/max/used), the
+// same tolerance the catalogue parser applies.
+function parseRuntimeOffice(value: unknown, path: string): Office {
+  const o = requireObject(value, path)
+  const storage = requireObject(o.storage, `${path}.storage`)
+  const storageNumber = (canonical: string, wire: string): number => {
+    const raw = storage[canonical] !== undefined ? storage[canonical] : storage[wire]
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      throw new ApiError(
+        'UNEXPECTED_RESPONSE',
+        `${path}.storage.${wire} must be a number, got ${describe(raw)}`,
+        200,
+      )
+    }
+    return raw
+  }
+  return {
+    id: requireString(o, 'id', path),
+    type: requireString(o, 'type', path),
+    is_head_office: requireBoolean(o, 'is_head_office', path),
+    down_payment: requireNumber(o, 'down_payment', path),
+    weekly_rent: requireNumber(o, 'weekly_rent', path),
+    rent_prepaid_weeks: requireNumber(o, 'rent_prepaid_weeks', path),
+    next_rent_due: optionalString(o, 'next_rent_due', path),
+    storage: {
+      base_capacity: storageNumber('base_capacity', 'base'),
+      current_capacity: storageNumber('current_capacity', 'current'),
+      maximum_capacity: storageNumber('maximum_capacity', 'max'),
+      used_units: storageNumber('used_units', 'used'),
+    },
+    employee_capacity: requireNumber(o, 'employee_capacity', path),
+    bicycle_capacity: requireNumber(o, 'bicycle_capacity', path),
+    vehicle_capacity: requireNumber(o, 'vehicle_capacity', path),
+    accepted_package_sizes: requireStringArray(o, 'accepted_package_sizes', path),
+    contract_status: requireString(o, 'contract_status', path),
+    missed_rent_payments: requireNumber(o, 'missed_rent_payments', path),
+  }
+}
+
 function parseSelectOffice(payload: unknown, requestedId: string): SelectOfficeResult {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     return { cash_balance: null, office_id: requestedId, state: null }
@@ -444,6 +486,25 @@ export const api = {
       body: JSON.stringify({ office_id: officeId }),
     })
     return parseSelectOffice(payload, officeId)
+  },
+
+  // getOffice reads the selected runtime office (SPEC 4.1). It returns null before a
+  // selection. A terminated contract is still returned with contract_status, which is how
+  // the client distinguishes "no office yet" from "contract ended" (SPEC 4.2).
+  async getOffice(): Promise<Office | null> {
+    let payload: unknown
+    try {
+      payload = await request<unknown>('/office')
+    } catch (err) {
+      if (isMissingRoute(err)) return null
+      throw err
+    }
+    const root = requireObject(payload, 'office')
+    if (!('office' in root)) {
+      throw new ApiError('UNEXPECTED_RESPONSE', 'office must be an office object or null', 200)
+    }
+    if (root.office === null) return null
+    return parseRuntimeOffice(root.office, 'office')
   },
 
   async getPackages(): Promise<Package[]> {

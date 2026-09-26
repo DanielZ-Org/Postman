@@ -198,6 +198,7 @@ interface MockState {
   epochGameMs: number
   speed: number
   paused: boolean
+  status: 'running' | 'game_over'
   cash: number
   loanPrincipal: number
   trait: string
@@ -223,6 +224,7 @@ function createState(): MockState {
     epochGameMs: START_MS,
     speed: 1,
     paused: false,
+    status: 'running',
     cash: 1000,
     loanPrincipal: 1000,
     trait: 'financial',
@@ -468,14 +470,28 @@ function generatePackages(state: MockState, nowMs: number): void {
   }
 }
 
+// cheapestDownPayment is the lowest cost of entering any contract, used by the SPEC 4.2
+// game-over test: a terminated contract only ends the run when this is unaffordable.
+function cheapestDownPayment(): number {
+  return OFFERS.reduce((min, offer) => Math.min(min, offer.down_payment), Number.POSITIVE_INFINITY)
+}
+
 function simulate(state: MockState): number {
+  if (state.status === 'game_over') {
+    foldTime(state)
+    return state.epochGameMs
+  }
   const nowMs = gameNowMs(state)
   processRuns(state, nowMs)
   processCalendar(state, nowMs)
   generatePackages(state, nowMs)
-  if (state.office && state.office.contract_status !== 'active') {
+  // SPEC 4.2: a terminated contract frees the slot for a new one. The run ends only
+  // when the remaining cash cannot cover the cheapest down payment, otherwise the
+  // player may re-select. The terminated office is kept so GET /office can report it.
+  const office = state.office
+  if (office && office.contract_status !== 'active' && state.cash < cheapestDownPayment()) {
     foldTime(state)
-    state.office = null
+    state.status = 'game_over'
     state.paused = true
   }
   return gameNowMs(state)
@@ -517,17 +533,20 @@ function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
 
 function gameResponse(state: MockState, nowMs: number) {
   const office = state.office
+  const active = office && office.contract_status === 'active' ? office : null
   const used = storageUsed(state)
   return {
-    game: { status: 'running', game_datetime: isoFromMs(nowMs), speed: state.speed },
+    game: { status: state.status, game_datetime: isoFromMs(nowMs), speed: state.speed },
     player: { id: 'player-1', cash: Math.round(state.cash * 100) / 100, trait: state.trait },
-    office: office
+    // SPEC 14.2: the /game projection carries an office only while the contract is
+    // active. A terminated contract is visible through GET /office instead.
+    office: active
       ? {
-          id: office.id,
+          id: active.id,
           storage_used: used,
-          storage_capacity: office.current_capacity,
+          storage_capacity: active.current_capacity,
           employee_count: state.employees.length,
-          employee_capacity: office.employee_capacity,
+          employee_capacity: active.employee_capacity,
         }
       : null,
     operations: {
@@ -537,9 +556,37 @@ function gameResponse(state: MockState, nowMs: number) {
     },
     finance: {
       accrued_wages: Math.round(state.employees.reduce((s, e) => s + e.accrued_wages, 0) * 100) / 100,
-      next_rent: office ? office.weekly_rent : 0,
+      next_rent: active ? active.weekly_rent : 0,
       loan_principal: state.loanPrincipal,
     },
+  }
+}
+
+// runtimeOffice mirrors the SPEC 4.1 selected-office representation served by
+// GET /api/v1/office, including a terminated contract.
+function runtimeOffice(state: MockState) {
+  const office = state.office
+  if (!office) return null
+  return {
+    id: office.id,
+    type: office.type,
+    is_head_office: true,
+    down_payment: office.down_payment,
+    weekly_rent: office.weekly_rent,
+    rent_prepaid_weeks: office.rent_prepaid_weeks,
+    next_rent_due: office.contract_status === 'active' ? isoFromMs(office.next_rent_due_ms) : null,
+    storage: {
+      base: office.base_capacity,
+      current: office.current_capacity,
+      max: office.maximum_capacity,
+      used: storageUsed(state),
+    },
+    employee_capacity: office.employee_capacity,
+    bicycle_capacity: office.bicycle_capacity,
+    vehicle_capacity: office.vehicle_capacity,
+    accepted_package_sizes: [...office.accepted_package_sizes],
+    contract_status: office.contract_status,
+    missed_rent_payments: office.missed_rent_payments,
   }
 }
 
@@ -555,8 +602,9 @@ function clockResponse(state: MockState, nowMs: number) {
     if (slot && currentDow === 2 && minutes > 17 * 60) daysPayroll = 7
   }
   let daysRent = 0
-  if (state.office) {
-    const due = state.office.next_rent_due_ms
+  const active = state.office && state.office.contract_status === 'active' ? state.office : null
+  if (active) {
+    const due = active.next_rent_due_ms
     const dueDay = Date.UTC(new Date(due).getUTCFullYear(), new Date(due).getUTCMonth(), new Date(due).getUTCDate())
     const nowDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
     daysRent = Math.max(0, Math.round((dueDay - nowDay) / 86_400_000))
@@ -607,6 +655,7 @@ function financeResponse(state: MockState, nowMs: number) {
   const incomeTotal = round(packageRevenue + traitBonus)
   const expenseTotal = round(wages + rent + interest + hiring + other)
   const accrued = round(state.employees.reduce((s, e) => s + e.accrued_wages, 0))
+  const active = state.office && state.office.contract_status === 'active' ? state.office : null
 
   return {
     cash_balance: round(state.cash),
@@ -624,7 +673,7 @@ function financeResponse(state: MockState, nowMs: number) {
     liabilities: {
       loan_principal: round(state.loanPrincipal),
       accrued_employee_wages: accrued,
-      next_rent_amount: state.office ? state.office.weekly_rent : 0,
+      next_rent_amount: active ? active.weekly_rent : 0,
       next_interest_estimate: round(state.loanPrincipal * 0.05),
     },
   }
@@ -707,6 +756,11 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       respond(200, clockResponse(state, now))
       return true
     }
+    if (method === 'GET' && path === '/api/v1/office') {
+      simulate(state)
+      respond(200, { office: runtimeOffice(state) })
+      return true
+    }
     if (method === 'GET' && path === '/api/v1/offices') {
       simulate(state)
       respond(200, { offices: officeOffers(state) })
@@ -720,7 +774,14 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
         respond(err.status, err.body)
         return true
       }
-      if (state.office) {
+      if (state.status === 'game_over') {
+        const err = httpError(409, 'GAME_OVER', 'the game has ended')
+        respond(err.status, err.body)
+        return true
+      }
+      // An active contract blocks re-selection; a terminated one frees the slot
+      // (SPEC 4.2 re-entry rule).
+      if (state.office && state.office.contract_status === 'active') {
         const err = httpError(409, 'OFFICE_ALREADY_SELECTED', 'A head office is already selected.')
         respond(err.status, err.body)
         return true
@@ -936,6 +997,45 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       Object.assign(state, createState())
       const now = simulate(state)
       respond(200, gameResponse(state, now))
+      return true
+    }
+
+    // Test hooks. Reaching these states through the calendar would take weeks of game
+    // time (rent is prepaid 4 weeks and a cycle is 4 game hours), so tests drive them
+    // directly. They only set up the preconditions — SPEC 4.2's decision of whether the
+    // run ends is still taken by simulate() above, not faked here.
+    if (method === 'POST' && path === '/api/v1/debug/terminate-contract') {
+      await readJson(req)
+      const now = simulate(state)
+      if (!state.office) {
+        const err = httpError(409, 'NO_OFFICE', 'Select a head office before terminating its contract.')
+        respond(err.status, err.body)
+        return true
+      }
+      if (state.office.contract_status !== 'active') {
+        const err = httpError(409, 'CONTRACT_NOT_ACTIVE', 'The head office contract is already terminated.')
+        respond(err.status, err.body)
+        return true
+      }
+      state.office.missed_rent_payments = 2
+      state.office.contract_status = 'terminated'
+      addTxn(state, 'rent_late_fee', 0, 'Office contract terminated after missed rent', state.office.id, now)
+      respond(200, gameResponse(state, simulate(state)))
+      return true
+    }
+
+    if (method === 'POST' && path === '/api/v1/debug/bankrupt') {
+      await readJson(req)
+      simulate(state)
+      if (!state.office) {
+        const err = httpError(409, 'NO_OFFICE', 'Select a head office before draining its cash.')
+        respond(err.status, err.body)
+        return true
+      }
+      // Drops cash just below the cheapest down payment. No ledger entry: this hook
+      // fabricates a balance, it does not model a transaction.
+      state.cash = cheapestDownPayment() - 1
+      respond(200, gameResponse(state, simulate(state)))
       return true
     }
 

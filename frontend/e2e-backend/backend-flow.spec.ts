@@ -28,8 +28,23 @@ test.describe.serial('full stack: UI against the Go backend', () => {
     await expect(page.getByText(/All destinations local/)).toBeVisible()
   })
 
-  test('runs the clock at 3× for faster simulation', async ({ page }) => {
+  test('reads the real runtime office projection without a parse error', async ({ page }) => {
     await page.goto('/')
+    await expect(page.getByRole('heading', { name: 'Delivery flow' })).toBeVisible()
+
+    // The client parses GET /api/v1/office (SPEC 4.1) for the contract status. A shape
+    // mismatch surfaces as a sticky error banner, not a crash, so assert its absence.
+    await expect(page.locator('.error-banner')).toHaveCount(0)
+
+    const res = await page.request.get('/api/v1/office')
+    expect(res.status()).toBe(200)
+    const body = (await res.json()) as { office: Record<string, unknown> | null }
+    expect(body.office?.id).toBe('office-small-01')
+    expect(body.office?.contract_status).toBe('active')
+    expect(body.office?.missed_rent_payments).toBe(0)
+  })
+
+  test('runs the clock at 3× for faster simulation', async ({ page }) => {    await page.goto('/')
 
     const speed3 = page.getByRole('button', { name: '3×' })
     await expect(speed3).toBeVisible()
