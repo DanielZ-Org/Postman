@@ -8,7 +8,7 @@ import (
 func TestHireFeeLadderAndCapacity(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
 	selectSmall(t, s) // cash 100000p - 35000p = 65000p
-	s.cash = 1000000 // isolate the fee ladder from affordability (£10000 in pence)
+	s.cash = 1000000  // isolate the fee ladder from affordability (£10000 in pence)
 
 	// Five hires: fees 5000, 10000, 15000, 20000, 25000p (SPEC 8 lifetime counter).
 	wantFees := []int{5000, 10000, 15000, 20000, 25000}

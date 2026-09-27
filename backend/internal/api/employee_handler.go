@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/DanielZ-Org/Postman/backend/internal/game"
 )
@@ -146,6 +147,88 @@ func (h *employeeHandler) writeHireError(w http.ResponseWriter, err error) {
 			return
 		}
 		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected hiring failure", nil)
+	}
+}
+
+// handleModePath serves POST /api/v1/employees/{id}/mode (approved plan section
+// 3.3) through the "/employees/" subtree pattern: the path tail must be exactly
+// "<employee_id>/mode". The body is a strict {"mode": "foot"|"bicycle"|"car"} object;
+// business rules live in the game layer (atomic mode switch).
+func (h *employeeHandler) handleModePath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	const suffix = "/mode"
+	tail := strings.TrimPrefix(r.URL.Path, "/employees/")
+	if !strings.HasSuffix(tail, suffix) || tail == "" {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"expected path /employees/{id}/mode", nil)
+		return
+	}
+	employeeID := strings.TrimSuffix(tail, suffix)
+	if employeeID == "" || strings.Contains(employeeID, "/") {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_EMPLOYEE_ID",
+			"employee id must be a single path segment", nil)
+		return
+	}
+
+	body, code := readBody(r, false) // JSON required; zero-length not allowed
+	if code != "" {
+		writeAPIError(w, http.StatusBadRequest, code, "request body must be a single valid JSON value", nil)
+		return
+	}
+	obj, ok := decodeObject(body)
+	if !ok {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "request body must be a JSON object with only the 'mode' field", nil)
+		return
+	}
+	for k := range obj {
+		if k != "mode" {
+			writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "unknown or unexpected field in request", map[string]any{"field": k})
+			return
+		}
+	}
+	rawMode, present := obj["mode"]
+	if !present {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "missing required field 'mode'", map[string]any{"field": "mode"})
+		return
+	}
+	mode, err := parseStringField(rawMode)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_MODE", "field 'mode' must be a string", nil)
+		return
+	}
+
+	emp, err := h.state.SetEmployeeMode(employeeID, mode)
+	if err != nil {
+		h.writeModeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, employeeFrom(*emp))
+}
+
+// writeModeError maps mode-switch failures to canonical codes (SPEC 14.1 envelope).
+func (h *employeeHandler) writeModeError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, game.ErrGameOver):
+		writeAPIError(w, http.StatusConflict, "GAME_OVER", "the game has ended", nil)
+	case errors.Is(err, game.ErrEmployeeNotFound):
+		writeAPIError(w, http.StatusNotFound, "EMPLOYEE_NOT_FOUND", "unknown employee id", nil)
+	case errors.Is(err, game.ErrInvalidMode):
+		writeAPIError(w, http.StatusBadRequest, "INVALID_MODE", "invalid delivery mode", map[string]any{"allowed": game.ValidModes()})
+	case errors.Is(err, game.ErrEmployeeBusy):
+		writeAPIError(w, http.StatusConflict, "EMPLOYEE_BUSY", "employee is mid-run; switch modes only while ready", nil)
+	default:
+		var skillErr *game.MissingSkillError
+		if errors.As(err, &skillErr) {
+			writeAPIError(w, http.StatusConflict, "MISSING_SKILL",
+				"employee lacks the skill required for this delivery mode",
+				map[string]any{"employee_id": skillErr.EmployeeID, "required_skill": skillErr.RequiredSkill})
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected mode switch failure", nil)
 	}
 }
 

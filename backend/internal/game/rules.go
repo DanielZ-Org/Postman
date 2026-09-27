@@ -66,6 +66,23 @@ const (
 	hireFeeStep = 5000
 )
 
+// Vehicle purchase prices (SPEC 12/16.7 OPEN): labelled placeholder values in pence,
+// isolated here so a later board decision changes one line.
+const (
+	bicyclePurchasePrice = 5000  // £50 placeholder
+	carPurchasePrice     = 50000 // £500 placeholder
+)
+
+// Hire-time skill distribution (SPEC 7.2): the player may hire employees who already
+// possess skills and training is DEFERRED, so a deterministic cycle makes vehicle modes
+// reachable without a training system. Labelled temporary assumption: none -> bicycle
+// -> bicycle + driving licence, repeating.
+var hireSkillCycle = [][]string{
+	{},
+	{SkillBicycle},
+	{SkillBicycle, SkillDrivingLicence},
+}
+
 // Finance schedules (SPEC 11): payroll settles every Tuesday, rent every Friday after
 // the prepaid weeks, and loan interest every four game weeks (5% of principal).
 const (

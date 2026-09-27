@@ -35,6 +35,8 @@ type Snapshot struct {
 	NextPkgSeq        int            `json:"next_pkg_seq"`
 	NextEmpSeq        int            `json:"next_emp_seq"`
 	TotalHires        int            `json:"total_hires"`
+	BicyclesOwned     int            `json:"bicycles_owned"`
+	CarsOwned         int            `json:"cars_owned"`
 	LastGeneration    string         `json:"last_generation"`
 	InterestDue       string         `json:"interest_due"`
 	PayrollDue        string         `json:"payroll_due"`
@@ -81,6 +83,8 @@ func (s *GameState) Snapshot() *Snapshot {
 		NextPkgSeq:        s.nextPkgSeq,
 		NextEmpSeq:        s.nextEmpSeq,
 		TotalHires:        s.totalHires,
+		BicyclesOwned:     s.bicyclesOwned,
+		CarsOwned:         s.carsOwned,
 		LastGeneration:    s.lastGeneration.Format(GameTimeFormat),
 		InterestDue:       s.interestDue.Format(GameTimeFormat),
 		PayrollDue:        s.payrollDue.Format(GameTimeFormat),
@@ -197,6 +201,10 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	s.nextPkgSeq = snap.NextPkgSeq
 	s.nextEmpSeq = snap.NextEmpSeq
 	s.totalHires = snap.TotalHires
+	// Saves written before vehicle inventory existed lack the fields; Go's zero value on
+	// unmarshal defaults both to 0 (nothing owned), which is correct.
+	s.bicyclesOwned = snap.BicyclesOwned
+	s.carsOwned = snap.CarsOwned
 	s.lastGeneration = lastGen
 	s.interestDue = interestDue
 	s.payrollDue = payrollDue

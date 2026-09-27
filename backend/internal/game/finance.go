@@ -26,6 +26,7 @@ const (
 	CategoryHiringBonus       = "hiring_bonus"
 	CategoryEmployeeWages     = "employee_wages"
 	CategoryLoanInterest      = "loan_interest"
+	CategoryVehiclePurchase   = "vehicle_purchase"
 )
 
 // postTransactionLocked applies a money mutation: adjusts cash by amount and appends

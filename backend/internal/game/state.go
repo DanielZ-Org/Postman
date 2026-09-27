@@ -306,6 +306,9 @@ type GameState struct {
 	nextEmpSeq int // 1-based employee id sequence
 	totalHires int // lifetime hire counter driving the hiring fee (SPEC 8)
 
+	bicyclesOwned int // vehicle inventory: owned bicycles (approved plan section 3.3)
+	carsOwned     int // vehicle inventory: owned cars
+
 	lastGeneration time.Time // package-generation cursor (30-minute grid)
 	interestDue    time.Time // next four-week loan-interest instant (SPEC 11.1)
 	payrollDue     time.Time // next Tuesday payroll instant (SPEC 11.2)

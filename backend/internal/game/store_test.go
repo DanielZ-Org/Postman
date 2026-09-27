@@ -158,21 +158,21 @@ func TestRestoreNilIsNoOp(t *testing.T) {
 // existing dev saves keep their values across the unit change.
 func TestRestoreMigratesV1PoundsToVPence(t *testing.T) {
 	v1 := &Snapshot{
-		Version:           1,
-		GameTime:          "1980-02-03T09:00:00",
-		Speed:             1,
-		Paused:            false,
-		Status:            GameStatusRunning,
-		Player:            Player{ID: "player-1", Name: "Daniel", Trait: "financial", LoanPrincipal: 1000},
-		Cash:              650,
-		Office:            &RuntimeOffice{ID: "office-small-01", Type: "small", IsHeadOffice: true, DownPayment: 350, WeeklyRent: 50, ContractStatus: ContractActive},
-		Packages:          []*Package{{ID: "pkg-000001", Size: "small", ServiceType: ServiceNormal, BaseFee: 12, FinalRevenue: intPtr(9), Status: PackageDelivered}},
-		Employees:         []*Employee{{ID: "emp-0001", Name: "Bob Snail", AccruedWages: 4, CurrentDeliveryMode: ModeFoot, Status: EmployeeReady}},
-		Transactions:      []Transaction{{ID: "txn-000002", GameDatetime: "1980-02-01T09:00:00", Category: CategoryOfficeDownPayment, Amount: -350}},
-		NextTxnID:         3,
-		LastGeneration:    "1980-02-03T09:00:00",
-		InterestDue:       "1980-02-29T09:00:00",
-		PayrollDue:        "1980-02-05T09:00:00",
+		Version:        1,
+		GameTime:       "1980-02-03T09:00:00",
+		Speed:          1,
+		Paused:         false,
+		Status:         GameStatusRunning,
+		Player:         Player{ID: "player-1", Name: "Daniel", Trait: "financial", LoanPrincipal: 1000},
+		Cash:           650,
+		Office:         &RuntimeOffice{ID: "office-small-01", Type: "small", IsHeadOffice: true, DownPayment: 350, WeeklyRent: 50, ContractStatus: ContractActive},
+		Packages:       []*Package{{ID: "pkg-000001", Size: "small", ServiceType: ServiceNormal, BaseFee: 12, FinalRevenue: intPtr(9), Status: PackageDelivered}},
+		Employees:      []*Employee{{ID: "emp-0001", Name: "Bob Snail", AccruedWages: 4, CurrentDeliveryMode: ModeFoot, Status: EmployeeReady}},
+		Transactions:   []Transaction{{ID: "txn-000002", GameDatetime: "1980-02-01T09:00:00", Category: CategoryOfficeDownPayment, Amount: -350}},
+		NextTxnID:      3,
+		LastGeneration: "1980-02-03T09:00:00",
+		InterestDue:    "1980-02-29T09:00:00",
+		PayrollDue:     "1980-02-05T09:00:00",
 	}
 
 	restored := NewInitialState()

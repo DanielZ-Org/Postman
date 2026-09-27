@@ -9,12 +9,20 @@ const (
 	EmployeeOutForDelivery = "out_for_delivery"
 )
 
-// Employee delivery modes and mood defaults (SPEC 7.3/7.4). Only foot delivery exists
-// in the first slice.
+// Employee delivery modes (SPEC 9) and mood defaults (SPEC 7.3/7.4).
 const (
-	ModeFoot = "foot"
+	ModeFoot    = "foot"
+	ModeBicycle = "bicycle"
+	ModeCar     = "car"
 
 	MoodNeutral = "neutral"
+)
+
+// Employee skills (SPEC 7.2): an extensible list; vehicle modes are gated on the
+// matching skill, foot delivery always works without one.
+const (
+	SkillBicycle        = "bicycle"
+	SkillDrivingLicence = "driving_licence"
 )
 
 // Employee is one delivery worker. Wages accrue per delivered package and settle at
@@ -56,13 +64,17 @@ var speedTraits = []string{"snail", "chicken", "cheetah"}
 
 // newEmployee builds a ready-to-work employee for the given 1-based hire number.
 // Speed-trait numeric modifiers are OPEN (SPEC 16.5), so the trait is stored but has
-// no mechanical effect on foot delivery in the first slice.
+// no mechanical effect on delivery speed. Skills follow the deterministic hire-time
+// distribution (SPEC 7.2, labelled cycle in rules.go) so vehicle modes are reachable
+// without a training system.
 func newEmployee(id string, hireNumber int) *Employee {
+	// A non-nil empty slice so the wire contract serialises skills as [] (never null).
+	skills := append([]string{}, hireSkillCycle[(hireNumber-1)%len(hireSkillCycle)]...)
 	return &Employee{
 		ID:                        id,
 		Name:                      hireNames[(hireNumber-1)%len(hireNames)],
 		SpeedTrait:                speedTraits[(hireNumber-1)%len(speedTraits)],
-		Skills:                    []string{},
+		Skills:                    skills,
 		Mood:                      MoodNeutral,
 		CurrentDeliveryMode:       ModeFoot,
 		PackagesDeliveredThisWeek: 0,

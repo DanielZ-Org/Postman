@@ -53,6 +53,14 @@ func NewRouter(state *game.GameState) http.Handler {
 	dh := newDeliveryHandler(state)
 	v1.HandleFunc("/deliveries/assign", dh.handleAssign)
 
+	// Vehicle inventory and purchase (approved plan section 3.3). The "/employees/"
+	// subtree pattern routes POST /employees/{id}/mode to the mode-switch handler;
+	// the exact patterns above keep winning for /employees and /employees/hire.
+	vh := newVehiclesHandler(state)
+	v1.HandleFunc("/vehicles", vh.handleList)
+	v1.HandleFunc("/vehicles/purchase", vh.handlePurchase)
+	v1.HandleFunc("/employees/", eh.handleModePath)
+
 	// Finance statement and transaction history (SPEC 11).
 	fh := newFinanceHandler(state)
 	v1.HandleFunc("/finance", fh.handleStatement)

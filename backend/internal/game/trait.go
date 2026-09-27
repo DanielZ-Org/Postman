@@ -5,8 +5,8 @@ import "errors"
 // Trait-selection errors (SPEC 3). The API layer maps each to its canonical machine
 // error code and HTTP status; every failed selection leaves state unchanged.
 var (
-	ErrInvalidTrait         = errors.New("invalid trait value")                    // INVALID_TRAIT 400
-	ErrTraitAlreadySelected = errors.New("a trait has already been selected")      // TRAIT_ALREADY_SELECTED 409
+	ErrInvalidTrait         = errors.New("invalid trait value")               // INVALID_TRAIT 400
+	ErrTraitAlreadySelected = errors.New("a trait has already been selected") // TRAIT_ALREADY_SELECTED 409
 )
 
 // SelectTrait atomically selects the player's one-time trait (SPEC 3: "one player
