@@ -173,6 +173,7 @@ func TestRestoreMigratesV1PoundsToVPence(t *testing.T) {
 		LastGeneration: "1980-02-03T09:00:00",
 		InterestDue:    "1980-02-29T09:00:00",
 		PayrollDue:     "1980-02-05T09:00:00",
+		DailyRevenue:   500,
 	}
 
 	restored := NewInitialState()
@@ -198,6 +199,9 @@ func TestRestoreMigratesV1PoundsToVPence(t *testing.T) {
 	}
 	if len(got.Transactions) != 1 || got.Transactions[0].Amount != -35000 {
 		t.Errorf("transaction = %+v, want amount -35000p", got.Transactions)
+	}
+	if got.DailyRevenue != 50000 {
+		t.Errorf("daily revenue = %d, want 50000p (500 pounds x100)", got.DailyRevenue)
 	}
 
 	// The migrated state must be usable: a fresh snapshot round-trips as v2 without further change.

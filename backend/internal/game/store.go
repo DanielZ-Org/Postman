@@ -216,9 +216,11 @@ func (s *GameState) Restore(snap *Snapshot) error {
 }
 
 // migrateV1ToV2 converts a v1 snapshot (monetary fields in integer pounds) to the
-// current v2 schema (integer pence): every monetary field is multiplied by 100 and the
-// version is bumped, so the next save persists the migrated state forward as v2. This
-// keeps existing dev saves valid across the unit change without losing their values.
+// current v2 schema (integer pence): every monetary field — Cash, Player.LoanPrincipal,
+// Office.DownPayment/WeeklyRent, Package.BaseFee/FinalRevenue, Employee.AccruedWages,
+// Transaction.Amount and Snapshot.DailyRevenue — is multiplied by 100 and the version
+// is bumped, so the next save persists the migrated state forward as v2. This keeps
+// existing dev saves valid across the unit change without losing their values.
 func migrateV1ToV2(snap *Snapshot) {
 	snap.Cash *= 100
 	snap.Player.LoanPrincipal *= 100
@@ -238,6 +240,7 @@ func migrateV1ToV2(snap *Snapshot) {
 	for i := range snap.Transactions {
 		snap.Transactions[i].Amount *= 100
 	}
+	snap.DailyRevenue *= 100
 	snap.Version = snapshotVersion
 }
 
