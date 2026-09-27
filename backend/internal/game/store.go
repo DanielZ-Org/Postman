@@ -53,9 +53,11 @@ type SnapshotRun struct {
 	PhaseEnd   string   `json:"phase_end"`
 }
 
-// snapshotVersion identifies the snapshot schema; a mismatch is treated as "no
-// saved game" by adapters (labelled: version migration does not exist yet).
-const snapshotVersion = 1
+// snapshotVersion identifies the current snapshot schema. v2 moved every monetary
+// field from integer pounds to integer pence (board decision, SPEC 4.3); a v1 save is
+// migrated at load time by migrateV1ToV2 and saved forward as v2. Any other version is
+// treated as "no saved game" by adapters.
+const snapshotVersion = 2
 
 // Snapshot builds a consistent copy of the entire game state for persistence. It
 // holds the state lock for the whole copy so a concurrent tick or mutation cannot
@@ -132,7 +134,12 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	if snap == nil {
 		return nil
 	}
-	if snap.Version != snapshotVersion {
+	switch snap.Version {
+	case snapshotVersion:
+		// current schema; nothing to migrate
+	case 1:
+		migrateV1ToV2(snap)
+	default:
 		return &snapshotError{"unsupported snapshot version " + itoa(snap.Version)}
 	}
 
@@ -198,6 +205,32 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	s.dailyRevenue = snap.DailyRevenue
 	s.dailyRevenueKey = snap.DailyRevenueKey
 	return nil
+}
+
+// migrateV1ToV2 converts a v1 snapshot (monetary fields in integer pounds) to the
+// current v2 schema (integer pence): every monetary field is multiplied by 100 and the
+// version is bumped, so the next save persists the migrated state forward as v2. This
+// keeps existing dev saves valid across the unit change without losing their values.
+func migrateV1ToV2(snap *Snapshot) {
+	snap.Cash *= 100
+	snap.Player.LoanPrincipal *= 100
+	if snap.Office != nil {
+		snap.Office.DownPayment *= 100
+		snap.Office.WeeklyRent *= 100
+	}
+	for _, p := range snap.Packages {
+		p.BaseFee *= 100
+		if p.FinalRevenue != nil {
+			*p.FinalRevenue *= 100
+		}
+	}
+	for _, e := range snap.Employees {
+		e.AccruedWages *= 100
+	}
+	for i := range snap.Transactions {
+		snap.Transactions[i].Amount *= 100
+	}
+	snap.Version = snapshotVersion
 }
 
 // snapshotError reports an unusable persisted snapshot.

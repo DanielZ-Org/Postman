@@ -26,8 +26,8 @@ func TestOfficeCatalogue(t *testing.T) {
 
 	t.Run("small office values", func(t *testing.T) {
 		s := defs[0]
-		if s.Type != "small" || s.DownPayment != 350 || s.WeeklyRent != 50 || s.RentPrepaidWeeks != 4 {
-			t.Errorf("small core = type %q dp %d rent %d prepaid %d, want small/350/50/4", s.Type, s.DownPayment, s.WeeklyRent, s.RentPrepaidWeeks)
+		if s.Type != "small" || s.DownPayment != 35000 || s.WeeklyRent != 5000 || s.RentPrepaidWeeks != 4 {
+			t.Errorf("small core = type %q dp %d rent %d prepaid %d, want small/35000p/5000p/4", s.Type, s.DownPayment, s.WeeklyRent, s.RentPrepaidWeeks)
 		}
 		if s.StorageBase != 100 || s.StorageMax != 150 {
 			t.Errorf("small storage base/max = %d/%d, want 100/150", s.StorageBase, s.StorageMax)
@@ -42,8 +42,8 @@ func TestOfficeCatalogue(t *testing.T) {
 
 	t.Run("large office values", func(t *testing.T) {
 		l := defs[1]
-		if l.Type != "large" || l.DownPayment != 450 || l.WeeklyRent != 75 || l.RentPrepaidWeeks != 4 {
-			t.Errorf("large core = type %q dp %d rent %d prepaid %d, want large/450/75/4", l.Type, l.DownPayment, l.WeeklyRent, l.RentPrepaidWeeks)
+		if l.Type != "large" || l.DownPayment != 45000 || l.WeeklyRent != 7500 || l.RentPrepaidWeeks != 4 {
+			t.Errorf("large core = type %q dp %d rent %d prepaid %d, want large/45000p/7500p/4", l.Type, l.DownPayment, l.WeeklyRent, l.RentPrepaidWeeks)
 		}
 		if l.StorageBase != 150 || l.StorageMax != 250 {
 			t.Errorf("large storage base/max = %d/%d, want 150/250", l.StorageBase, l.StorageMax)
@@ -82,15 +82,15 @@ func TestNewInitialStateDefaults(t *testing.T) {
 	if s.SelectedOffice() != nil {
 		t.Errorf("initial selected office = %v, want nil", s.SelectedOffice())
 	}
-	if got := s.Cash(); got != 1000 {
-		t.Errorf("initial cash = %d, want exactly 1000 (StartingCash)", got)
+	if got := s.Cash(); got != 100000 {
+		t.Errorf("initial cash = %d, want exactly 100000p £1000 (StartingCash)", got)
 	}
 	txn := s.Transactions()
 	if len(txn) != 1 {
 		t.Fatalf("initial transactions = %d, want exactly 1 (loan disbursement)", len(txn))
 	}
-	if txn[0].Category != CategoryLoanDisbursement || txn[0].Amount != 1000 || txn[0].ID != "txn-000001" {
-		t.Errorf("initial transaction = %+v, want txn-000001 loan_disbursement +1000", txn[0])
+	if txn[0].Category != CategoryLoanDisbursement || txn[0].Amount != 100000 || txn[0].ID != "txn-000001" {
+		t.Errorf("initial transaction = %+v, want txn-000001 loan_disbursement +100000p", txn[0])
 	}
 }
 
@@ -113,8 +113,8 @@ func TestSelectSmallOffice(t *testing.T) {
 	if office.ContractStatus != "active" || office.MissedRentPayments != 0 {
 		t.Errorf("contract status/missed rent = %q/%d, want active/0", office.ContractStatus, office.MissedRentPayments)
 	}
-	if cash != 650 || s.Cash() != 650 {
-		t.Errorf("cash after small selection = %d (state %d), want 650", cash, s.Cash())
+	if cash != 65000 || s.Cash() != 65000 {
+		t.Errorf("cash after small selection = %d (state %d), want 65000p £650", cash, s.Cash())
 	}
 
 	txn := s.Transactions()
@@ -122,8 +122,8 @@ func TestSelectSmallOffice(t *testing.T) {
 		t.Fatalf("transactions = %d, want exactly 2 (loan + down payment)", len(txn))
 	}
 	tr := txn[1]
-	if tr.Category != CategoryOfficeDownPayment || tr.Amount != -350 || tr.ReferenceID != "office-small-01" || tr.ID != "txn-000002" {
-		t.Errorf("transaction = %+v, want txn-000002 category office_down_payment amount -350 reference_id office-small-01", tr)
+	if tr.Category != CategoryOfficeDownPayment || tr.Amount != -35000 || tr.ReferenceID != "office-small-01" || tr.ID != "txn-000002" {
+		t.Errorf("transaction = %+v, want txn-000002 category office_down_payment amount -35000p reference_id office-small-01", tr)
 	}
 	if tr.GameDatetime != before.GameDatetime {
 		t.Errorf("transaction game_datetime = %q, want clock snapshot %q", tr.GameDatetime, before.GameDatetime)
@@ -146,12 +146,12 @@ func TestSelectLargeOffice(t *testing.T) {
 	if office.ID != "office-large-01" || !office.IsHeadOffice || office.Type != "large" {
 		t.Errorf("selected office id/head/type = %q/%v/%q, want office-large-01/true/large", office.ID, office.IsHeadOffice, office.Type)
 	}
-	if cash != 550 || s.Cash() != 550 {
-		t.Errorf("cash after large selection = %d (state %d), want 550", cash, s.Cash())
+	if cash != 55000 || s.Cash() != 55000 {
+		t.Errorf("cash after large selection = %d (state %d), want 55000p £550", cash, s.Cash())
 	}
 	txn := s.Transactions()
-	if len(txn) != 2 || txn[1].Category != CategoryOfficeDownPayment || txn[1].Amount != -450 || txn[1].ReferenceID != "office-large-01" {
-		t.Errorf("transaction = %+v, want loan + one office_down_payment amount -450 reference_id office-large-01", txn)
+	if len(txn) != 2 || txn[1].Category != CategoryOfficeDownPayment || txn[1].Amount != -45000 || txn[1].ReferenceID != "office-large-01" {
+		t.Errorf("transaction = %+v, want loan + one office_down_payment amount -45000p reference_id office-large-01", txn)
 	}
 }
 
@@ -164,20 +164,20 @@ func TestSelectRejectionsLeaveStateUnchanged(t *testing.T) {
 		if _, _, err := s.SelectOffice("office-bogus-99"); !errors.Is(err, ErrOfficeNotFound) {
 			t.Fatalf("error = %v, want ErrOfficeNotFound", err)
 		}
-		assertUnchanged(t, s, "", 1000, 1)
+		assertUnchanged(t, s, "", 100000, 1)
 	})
 
 	t.Run("insufficient funds", func(t *testing.T) {
 		s := NewInitialState()
 		// M1D has no API to reduce cash; set the authoritative balance directly (same-package test)
 		// to reach the insufficient-funds branch: £300 < Small's £350 down payment.
-		s.cash = 300
+		s.cash = 30000
 		_, _, err := s.SelectOffice("office-small-01")
 		var ife *InsufficientFundsError
-		if !errors.As(err, &ife) || ife.Required != 350 || ife.Available != 300 {
-			t.Fatalf("error = %v, want *InsufficientFundsError{Required:350, Available:300}", err)
+		if !errors.As(err, &ife) || ife.Required != 35000 || ife.Available != 30000 {
+			t.Fatalf("error = %v, want *InsufficientFundsError{Required:35000p, Available:30000p}", err)
 		}
-		assertUnchanged(t, s, "", 300, 1)
+		assertUnchanged(t, s, "", 30000, 1)
 	})
 
 	t.Run("already selected other office", func(t *testing.T) {
@@ -188,7 +188,7 @@ func TestSelectRejectionsLeaveStateUnchanged(t *testing.T) {
 		if _, _, err := s.SelectOffice("office-large-01"); !errors.Is(err, ErrAlreadySelected) {
 			t.Fatalf("error = %v, want ErrAlreadySelected", err)
 		}
-		assertUnchanged(t, s, "office-small-01", 650, 2)
+		assertUnchanged(t, s, "office-small-01", 65000, 2)
 	})
 
 	t.Run("same office reselection rejected", func(t *testing.T) {
@@ -199,7 +199,7 @@ func TestSelectRejectionsLeaveStateUnchanged(t *testing.T) {
 		if _, _, err := s.SelectOffice("office-large-01"); !errors.Is(err, ErrAlreadySelected) {
 			t.Fatalf("error = %v, want ErrAlreadySelected (same office)", err)
 		}
-		assertUnchanged(t, s, "office-large-01", 550, 2)
+		assertUnchanged(t, s, "office-large-01", 55000, 2)
 	})
 }
 
@@ -261,8 +261,8 @@ func TestConcurrentSelectionOnlyOneSucceeds(t *testing.T) {
 		t.Fatal("no office selected after concurrent selection")
 	}
 	cash := s.Cash()
-	if cash != 1000-off.DownPayment {
-		t.Errorf("cash = %d, want 1000 - %d (one down payment) = %d", cash, off.DownPayment, 1000-off.DownPayment)
+	if cash != 100000-off.DownPayment {
+		t.Errorf("cash = %d, want 100000 - %d (one down payment) = %d", cash, off.DownPayment, 100000-off.DownPayment)
 	}
 	if n := len(s.Transactions()); n != 2 {
 		t.Fatalf("transactions = %d, want exactly 2 (loan + one down payment)", n)

@@ -57,8 +57,8 @@ func TestSelectTraitSucceeds(t *testing.T) {
 	}
 
 	// Authoritative state committed atomically; no cash change (SPEC defines no cost).
-	if got := state.Cash(); got != 1000 {
-		t.Errorf("cash = %d after selection, want unchanged 1000", got)
+	if got := state.Cash(); got != 100000 {
+		t.Errorf("cash = %d after selection, want unchanged 100000p", got)
 	}
 	if view := state.PlayerView(); view.Trait != "logistics" {
 		t.Errorf("authoritative trait = %q, want logistics", view.Trait)
@@ -93,8 +93,8 @@ func TestSelectTraitInvalidRequests(t *testing.T) {
 			if view := state.PlayerView(); view.Trait != "financial" {
 				t.Errorf("trait = %v after rejected request, want unchanged financial", view.Trait)
 			}
-			if got := state.Cash(); got != 1000 {
-				t.Errorf("cash = %d after rejected request, want unchanged 1000", got)
+			if got := state.Cash(); got != 100000 {
+				t.Errorf("cash = %d after rejected request, want unchanged 100000p", got)
 			}
 		})
 	}
@@ -233,8 +233,8 @@ func TestPlayerTraitUnsupportedMethods(t *testing.T) {
 		if rec.Code != http.StatusMethodNotAllowed || errorCode(t, rec.Body.Bytes()) != "METHOD_NOT_ALLOWED" {
 			t.Fatalf("status=%d code=%s, want 405 METHOD_NOT_ALLOWED; body=%s", rec.Code, errorCodeSafe(rec), rec.Body.String())
 		}
-		if got := state.Cash(); got != 1000 {
-			t.Errorf("cash = %d after rejected method, want unchanged 1000", got)
+		if got := state.Cash(); got != 100000 {
+			t.Errorf("cash = %d after rejected method, want unchanged 100000p", got)
 		}
 	})
 }

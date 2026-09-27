@@ -20,7 +20,7 @@ const (
 	DestinationLocal = "local" // MVP generates local packages only; far is DEFERRED
 )
 
-// Package is one parcel in storage or delivery. Monetary fields are integer pounds
+// Package is one parcel in storage or delivery. Monetary fields are integer pence
 // (SPEC 4.3). Pointer fields serialise as JSON null before they are set, matching the
 // SPEC 5.5 example shape. DueAt/DeliveredAt/ReceivedAt use the canonical game-time
 // format; the backend never stamps host wall-clock time.
@@ -49,18 +49,19 @@ func storageUnitsFor(size string) int {
 	return 1
 }
 
-// baseFeeFor returns the known revenue for a size/service combination (SPEC 5.3).
-// Large prices are OPEN in SPEC 16.2 and unreachable until office upgrades exist.
+// baseFeeFor returns the known revenue for a size/service combination (SPEC 5.3),
+// in integer pence. Large prices are OPEN in SPEC 16.2 and unreachable until office
+// upgrades exist.
 func baseFeeFor(size, service string) int {
 	switch {
 	case size == "small" && service == ServiceExpress:
-		return 12
+		return 1200 // £12 in pence
 	case size == "medium" && service == ServiceExpress:
-		return 15
+		return 1500 // £15 in pence
 	case size == "small":
-		return 5
+		return 500 // £5 in pence
 	default:
-		return 7
+		return 700 // £7 in pence
 	}
 }
 

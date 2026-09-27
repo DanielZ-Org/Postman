@@ -50,10 +50,17 @@ func main() {
 		// A corrupt save must not brick the server; log it loudly and start fresh.
 		log.Printf("[postman] ERROR: could not load saved game, starting fresh: %v", err)
 	} else if snapshot != nil {
+		// A v1 save (integer pounds) is migrated to the pence schema by Restore; persist
+		// it forward as v2 so the unit change happens exactly once.
+		migratedV1 := snapshot.Version == 1
 		if err := state.Restore(snapshot); err != nil {
 			log.Printf("[postman] ERROR: could not restore saved game, starting fresh: %v", err)
 		} else {
 			log.Printf("[postman] restored saved game at %s", snapshot.GameTime)
+			if migratedV1 {
+				_ = store.Save(state.Snapshot())
+				log.Printf("[postman] migrated v1 save to integer pence (schema v2) and re-saved")
+			}
 		}
 	}
 

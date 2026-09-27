@@ -13,8 +13,8 @@ import (
 type OfficeDefinition struct {
 	ID                   string
 	Type                 string
-	DownPayment          int // integer pounds
-	WeeklyRent           int // integer pounds
+	DownPayment          int // integer pence
+	WeeklyRent           int // integer pence
 	RentPrepaidWeeks     int
 	StorageBase          int
 	StorageMax           int
@@ -31,8 +31,8 @@ var officeCatalogue = []OfficeDefinition{
 	{
 		ID:                   "office-small-01",
 		Type:                 "small",
-		DownPayment:          350,
-		WeeklyRent:           50,
+		DownPayment:          35000, // £350 in pence
+		WeeklyRent:           5000,  // £50/week in pence
 		RentPrepaidWeeks:     4,
 		StorageBase:          100,
 		StorageMax:           150,
@@ -44,8 +44,8 @@ var officeCatalogue = []OfficeDefinition{
 	{
 		ID:                   "office-large-01",
 		Type:                 "large",
-		DownPayment:          450,
-		WeeklyRent:           75,
+		DownPayment:          45000, // £450 in pence
+		WeeklyRent:           7500,  // £75/week in pence
 		RentPrepaidWeeks:     4,
 		StorageBase:          150,
 		StorageMax:           250,
@@ -93,8 +93,8 @@ type RuntimeOffice struct {
 	ID                   string
 	Type                 string
 	IsHeadOffice         bool
-	DownPayment          int // integer pounds
-	WeeklyRent           int // integer pounds
+	DownPayment          int // integer pence
+	WeeklyRent           int // integer pence
 	RentPrepaidWeeks     int
 	NextRentDue          string // canonical game-time ISO format (midnight of the first rent-due date)
 	Storage              StorageState
@@ -125,8 +125,8 @@ var ErrAlreadySelected = errors.New("office already selected")
 // current cash is less than its down payment. It carries the required and available amounts for
 // API error details.
 type InsufficientFundsError struct {
-	Required  int // integer pounds required (the down payment)
-	Available int // integer pounds currently available
+	Required  int // integer pence required (the down payment)
+	Available int // integer pence currently available
 }
 
 func (e *InsufficientFundsError) Error() string {

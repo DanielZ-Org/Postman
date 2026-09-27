@@ -91,7 +91,7 @@ type runtimeOfficeJSON struct {
 }
 
 // selectResponse is the wire shape for a successful POST /api/v1/offices/select: the selected
-// runtime office plus the resulting cash balance (integer pounds). It does not return the whole
+// runtime office plus the resulting cash balance (integer pence). It does not return the whole
 // game state.
 type selectResponse struct {
 	Office      runtimeOfficeJSON `json:"office"`

@@ -283,7 +283,7 @@ There are no other selectable offices in M1. Office definitions are immutable ba
 
 ### Starting cash
 
-Canonical starting player cash is **£1000**. Money is represented using **integer pounds** for M1 (no floating point; pennies/pence are not yet required). The authoritative cash balance belongs to backend game state.
+Canonical starting player cash is **£1000** (= 100000 pence). All backend monetary values use **integer pence** (board decision, M2 money-unit migration): no floating point anywhere in money paths, and percentage results round half away from zero to whole pence. The authoritative cash balance belongs to backend game state.
 
 ### `GET /api/v1/offices`
 
@@ -1078,6 +1078,8 @@ The following are intentionally unresolved:
 10. Exact grace/recovery flow after a missed rent payment.
 11. Detailed far-delivery scheduling.
 12. Exact package-generation tick boundary semantics; the canonical rate remains 2 packages per open working hour.
+
+**Resolved (M2 board decision):** the monetary unit is integer pence globally (no whole-pound rounding, no floating point); percentage results round half away from zero to whole pence; the car wage is exactly 250p/package. This supersedes any earlier "integer pounds" wording.
 
 Do not allow a coding agent to silently decide these permanently. Temporary implementation assumptions should be clearly labelled and isolated in configuration.
 

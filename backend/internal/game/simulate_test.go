@@ -70,8 +70,8 @@ func TestGenerationRateDuringOpenHours(t *testing.T) {
 	if p.ReceivedAt != "1980-02-01T09:30:00" || p.DueAt != "1980-02-06T09:30:00" {
 		t.Errorf("received/due = %q/%q, want 09:30 receipt + 5 days (SPEC 5.2)", p.ReceivedAt, p.DueAt)
 	}
-	if p.BaseFee != 5 || p.StorageUnits != 1 || p.DeliveryCapacityUnits != 1 {
-		t.Errorf("fee/units = %d/%d/%d, want 5/1/1", p.BaseFee, p.StorageUnits, p.DeliveryCapacityUnits)
+	if p.BaseFee != 500 || p.StorageUnits != 1 || p.DeliveryCapacityUnits != 1 {
+		t.Errorf("fee/units = %d/%d/%d, want 500p/1/1", p.BaseFee, p.StorageUnits, p.DeliveryCapacityUnits)
 	}
 
 	// Catching up from 09:30 to 12:00 spawns at 10:00, 10:30, 11:00, 11:30, 12:00.
@@ -166,8 +166,8 @@ func TestExpressOnlyAfterFourWeeks(t *testing.T) {
 	if last.ServiceType != ServiceExpress {
 		t.Errorf("in-window package service = %s, want express (RNG forced)", last.ServiceType)
 	}
-	if last.BaseFee != 12 {
-		t.Errorf("express small base fee = %d, want 12 (SPEC 5.3)", last.BaseFee)
+	if last.BaseFee != 1200 {
+		t.Errorf("express small base fee = %d, want 1200p (SPEC 5.3)", last.BaseFee)
 	}
 }
 
@@ -230,7 +230,7 @@ func TestRunLifecycleDeliversAndAccrues(t *testing.T) {
 	if s.employees[0].Status != EmployeeReady {
 		t.Errorf("employee status = %s, want ready", s.employees[0].Status)
 	}
-	wantRevenue := 5 + 7 // small + medium normal (SPEC 5.3)
+	wantRevenue := 500 + 700 // small + medium normal, pence (SPEC 5.3)
 	if s.cash != cashBefore+wantRevenue {
 		t.Errorf("cash = %d, want %d (revenue %d)", s.cash, cashBefore+wantRevenue, wantRevenue)
 	}
@@ -277,9 +277,10 @@ func TestLateDeliveryPaysReducedRevenue(t *testing.T) {
 	}
 	cashBefore := s.cash
 	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00"))
-	// Normal late: 25% reduction -> £5 * 0.75 = £3.75 -> rounds to £4 (integer pounds).
-	if s.cash != cashBefore+4 {
-		t.Errorf("late revenue cash = %d, want +%d (25%% reduction, rounded)", s.cash-cashBefore, 4)
+	// Normal late: 25% reduction -> 500p * 0.75 = exactly 375p (integer pence needs no
+	// whole-pound rounding; SPEC 5.3).
+	if s.cash != cashBefore+375 {
+		t.Errorf("late revenue cash = %d, want +%d (25%% reduction, exact at the penny)", s.cash-cashBefore, 375)
 	}
 	if s.employees[0].AccruedWages != footWagePerPackage {
 		t.Errorf("wages = %d, want %d (express/late still counts one package)", s.employees[0].AccruedWages, footWagePerPackage)
@@ -288,7 +289,7 @@ func TestLateDeliveryPaysReducedRevenue(t *testing.T) {
 
 func TestFinancialTraitBonusSettlesAtDayRollover(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
-	s.dailyRevenue = 100
+	s.dailyRevenue = 10000 // pence
 	cashBefore := s.cash
 
 	s.processLocked(mustParseTime(t, "1980-02-02T00:00:01"))
@@ -299,16 +300,16 @@ func TestFinancialTraitBonusSettlesAtDayRollover(t *testing.T) {
 	for _, tr := range s.transactions {
 		if tr.Category == CategoryTraitBonus {
 			found = true
-			if tr.Amount != 10 {
-				t.Errorf("bonus amount = %d, want 10 (10%% of 100, SPEC 3.1)", tr.Amount)
+			if tr.Amount != 1000 {
+				t.Errorf("bonus amount = %d, want 1000p (10%% of 10000p, SPEC 3.1)", tr.Amount)
 			}
 		}
 	}
 	if !found {
 		t.Fatal("no financial_trait_bonus transaction at day rollover")
 	}
-	if s.cash != cashBefore+10 {
-		t.Errorf("cash = %d, want +%d", s.cash-cashBefore, 10)
+	if s.cash != cashBefore+1000 {
+		t.Errorf("cash = %d, want +%d", s.cash-cashBefore, 1000)
 	}
 	if s.deliveredToday != 0 {
 		t.Errorf("delivered_today = %d, want reset at rollover", s.deliveredToday)
@@ -321,7 +322,7 @@ func TestPayrollSettlesTuesdayWages(t *testing.T) {
 	if _, _, err := s.HireEmployee(); err != nil {
 		t.Fatalf("HireEmployee: %v", err)
 	}
-	s.employees[0].AccruedWages = 20
+	s.employees[0].AccruedWages = 2000 // pence
 	s.employees[0].PackagesDeliveredThisWeek = 10
 	cashBefore := s.cash
 
@@ -331,8 +332,8 @@ func TestPayrollSettlesTuesdayWages(t *testing.T) {
 	}
 	s.processLocked(mustParseTime(t, "1980-02-05T09:00:00"))
 
-	if s.cash != cashBefore-20 {
-		t.Errorf("cash = %d, want -20 wages", s.cash-cashBefore)
+	if s.cash != cashBefore-2000 {
+		t.Errorf("cash = %d, want -2000p wages", s.cash-cashBefore)
 	}
 	if s.employees[0].AccruedWages != 0 || s.employees[0].PackagesDeliveredThisWeek != 0 {
 		t.Errorf("accrued/weekly = %d/%d, want reset after payroll", s.employees[0].AccruedWages, s.employees[0].PackagesDeliveredThisWeek)
@@ -343,8 +344,8 @@ func TestPayrollSettlesTuesdayWages(t *testing.T) {
 			wages = &s.transactions[i]
 		}
 	}
-	if wages == nil || wages.Amount != -20 {
-		t.Fatalf("wage transaction = %+v, want -20", wages)
+	if wages == nil || wages.Amount != -2000 {
+		t.Fatalf("wage transaction = %+v, want -2000p", wages)
 	}
 	if s.payrollDue.Format(GameTimeFormat) != "1980-02-12T09:00:00" {
 		t.Errorf("next payroll = %s, want +7 days", s.payrollDue.Format(GameTimeFormat))
@@ -369,7 +370,7 @@ func TestRentPaymentMissesAndTermination(t *testing.T) {
 	}
 
 	// Second due: force insufficient cash -> first miss: 20% late fee, counter = 1.
-	s.cash = 30
+	s.cash = 3000 // pence
 	s.processRentLocked(mustParseTime(t, "1980-03-07T00:00:00"))
 	if office.MissedRentPayments != 1 {
 		t.Fatalf("missed = %d, want 1", office.MissedRentPayments)
@@ -380,8 +381,8 @@ func TestRentPaymentMissesAndTermination(t *testing.T) {
 			fee = &s.transactions[i]
 		}
 	}
-	if fee == nil || fee.Amount != -10 {
-		t.Fatalf("late fee transaction = %+v, want -10 (20%% of £50)", fee)
+	if fee == nil || fee.Amount != -1000 {
+		t.Fatalf("late fee transaction = %+v, want -1000p (20%% of £50)", fee)
 	}
 	if office.ContractStatus != ContractActive {
 		t.Errorf("contract = %s, want active after first miss (SPEC 4.2)", office.ContractStatus)
@@ -407,15 +408,15 @@ func TestLoanInterestEveryFourWeeks(t *testing.T) {
 		t.Fatalf("cash charged before due instant: %d, want unchanged", s.cash)
 	}
 	s.processInterestLocked(mustParseTime(t, "1980-02-29T09:00:00"))
-	if s.cash != cash-50 {
-		t.Errorf("cash = %d, want -50 (5%% of £1000, SPEC 11.1)", s.cash-cash)
+	if s.cash != cash-5000 {
+		t.Errorf("cash = %d, want -5000p (5%% of £1000, SPEC 11.1)", s.cash-cash)
 	}
 	if s.interestDue.Format(GameTimeFormat) != "1980-03-28T09:00:00" {
 		t.Errorf("next interest = %s, want +4 weeks", s.interestDue.Format(GameTimeFormat))
 	}
 	// Principal must not amortise (SPEC 16.9: repayment OPEN).
-	if s.player.LoanPrincipal != 1000 {
-		t.Errorf("loan principal = %d, want unchanged 1000", s.player.LoanPrincipal)
+	if s.player.LoanPrincipal != 100000 {
+		t.Errorf("loan principal = %d, want unchanged 100000p", s.player.LoanPrincipal)
 	}
 }
 
@@ -424,7 +425,7 @@ func TestGameOverWhenTerminatedAndCannotAffordNewOffice(t *testing.T) {
 	office := selectSmall(t, s)
 
 	office.ContractStatus = ContractTerminated
-	s.cash = 300 // below the £350 cheapest new contract
+	s.cash = 30000 // pence, below the £350 (35000p) cheapest new contract
 	s.processLocked(mustParseTime(t, "1980-03-01T09:00:00"))
 
 	if s.status != GameStatusGameOver {
@@ -443,7 +444,7 @@ func TestGameOverWhenTerminatedAndCannotAffordNewOffice(t *testing.T) {
 
 func TestTerminatedOfficeStillAffordableDoesNotEndGame(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
-	office := selectSmall(t, s) // cash 650
+	office := selectSmall(t, s) // cash 65000p
 	office.ContractStatus = ContractTerminated
 
 	s.processLocked(mustParseTime(t, "1980-03-01T09:00:00"))
@@ -454,7 +455,7 @@ func TestTerminatedOfficeStillAffordableDoesNotEndGame(t *testing.T) {
 
 func TestReSelectionAfterTermination(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
-	selectSmall(t, s) // cash 650
+	selectSmall(t, s) // cash 65000p
 
 	// While active: re-selection is rejected.
 	if _, _, err := s.SelectOffice("office-large-01"); err == nil {
@@ -467,8 +468,8 @@ func TestReSelectionAfterTermination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SelectOffice after termination: %v", err)
 	}
-	if office.ID != "office-large-01" || cash != 650-450 {
-		t.Errorf("office/cash = %s/%d, want office-large-01/200", office.ID, cash)
+	if office.ID != "office-large-01" || cash != 65000-45000 {
+		t.Errorf("office/cash = %s/%d, want office-large-01/20000p", office.ID, cash)
 	}
 }
 

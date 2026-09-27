@@ -279,8 +279,8 @@ func dayKey(t time.Time) string {
 }
 
 // StartingCash is the canonical starting player cash for a new game (SPEC 4.3): £1000,
-// represented as integer pounds.
-const StartingCash = 1000
+// represented as integer pence (board decision, M2 money-unit migration).
+const StartingCash = 100000
 
 // GameState is the authoritative in-memory game state created at backend startup when no
 // persisted game exists yet. It owns the clock, player, selected office, packages,
@@ -293,7 +293,7 @@ type GameState struct {
 	Clock          *Clock     // authoritative clock (owns its own lock)
 	player         Player
 	selectedOffice *RuntimeOffice // nil until an office is selected
-	cash           int            // authoritative cash balance, integer pounds (starts at StartingCash)
+	cash           int            // authoritative cash balance, integer pence (starts at StartingCash)
 	transactions   []Transaction
 	packages       []*Package
 	employees      []*Employee
@@ -363,7 +363,7 @@ func (s *GameState) SelectedOffice() *RuntimeOffice {
 	return s.selectedOffice
 }
 
-// Cash returns the current authoritative cash balance in integer pounds.
+// Cash returns the current authoritative cash balance in integer pence.
 func (s *GameState) Cash() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

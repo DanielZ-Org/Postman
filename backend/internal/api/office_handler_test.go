@@ -45,8 +45,8 @@ func TestGetOfficesReturnsCatalogue(t *testing.T) {
 	}
 
 	small := body.Offices[0]
-	if small["type"] != "small" || small["down_payment"] != float64(350) || small["weekly_rent"] != float64(50) || small["rent_prepaid_weeks"] != float64(4) {
-		t.Errorf("small core = type %v dp %v rent %v prepaid %v, want small/350/50/4", small["type"], small["down_payment"], small["weekly_rent"], small["rent_prepaid_weeks"])
+	if small["type"] != "small" || small["down_payment"] != float64(35000) || small["weekly_rent"] != float64(5000) || small["rent_prepaid_weeks"] != float64(4) {
+		t.Errorf("small core = type %v dp %v rent %v prepaid %v, want small/35000p/5000p/4", small["type"], small["down_payment"], small["weekly_rent"], small["rent_prepaid_weeks"])
 	}
 	if emp := small["employee_capacity"]; emp != float64(5) {
 		t.Errorf("small employee_capacity = %v, want 5", emp)
@@ -80,7 +80,7 @@ func TestGetOfficesReturnsCatalogue(t *testing.T) {
 }
 
 // TestSelectSmallSucceeds verifies a successful Small selection via the API: 200, JSON content type,
-// an exactly-{office, cash_balance} wrapper with the canonical runtime office shape and £650 cash.
+// an exactly-{office, cash_balance} wrapper with the canonical runtime office shape and 65000p (£650) cash.
 func TestSelectSmallSucceeds(t *testing.T) {
 	h, state := newTestRouter()
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/select", `{"office_id":"office-small-01"}`)
@@ -107,8 +107,8 @@ func TestSelectSmallSucceeds(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode select response: %v", err)
 	}
-	if body.CashBalance != 650 {
-		t.Errorf("cash_balance = %v, want 650", body.CashBalance)
+	if body.CashBalance != 65000 {
+		t.Errorf("cash_balance = %v, want 65000p", body.CashBalance)
 	}
 	o := body.Office
 	if o["id"] != "office-small-01" || o["is_head_office"] != true || o["type"] != "small" {
@@ -125,15 +125,15 @@ func TestSelectSmallSucceeds(t *testing.T) {
 		t.Errorf("storage = %v, want base/current/max/used 100/100/150/0", o["storage"])
 	}
 
-	if got := state.Cash(); got != 650 {
-		t.Errorf("authoritative cash = %d, want 650", got)
+	if got := state.Cash(); got != 65000 {
+		t.Errorf("authoritative cash = %d, want 65000p", got)
 	}
 	if off := state.SelectedOffice(); off == nil || off.ID != "office-small-01" {
 		t.Errorf("authoritative selected office = %v, want office-small-01", off)
 	}
 }
 
-// TestSelectLargeSucceeds verifies a successful Large selection via the API: 200 and £550 cash.
+// TestSelectLargeSucceeds verifies a successful Large selection via the API: 200 and 55000p (£550) cash.
 func TestSelectLargeSucceeds(t *testing.T) {
 	h, state := newTestRouter()
 	rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/select", `{"office_id":"office-large-01"}`)
@@ -147,11 +147,11 @@ func TestSelectLargeSucceeds(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode select response: %v; body=%s", err, rec.Body.String())
 	}
-	if body.CashBalance != 550 {
-		t.Errorf("cash_balance = %v, want 550", body.CashBalance)
+	if body.CashBalance != 55000 {
+		t.Errorf("cash_balance = %v, want 55000p", body.CashBalance)
 	}
-	if got := state.Cash(); got != 550 {
-		t.Errorf("authoritative cash = %d, want 550", got)
+	if got := state.Cash(); got != 55000 {
+		t.Errorf("authoritative cash = %d, want 55000p", got)
 	}
 }
 
@@ -184,8 +184,8 @@ func TestSelectInvalidRequests(t *testing.T) {
 			if off := state.SelectedOffice(); off != nil {
 				t.Errorf("selected office = %v after rejected request, want nil", off.ID)
 			}
-			if got := state.Cash(); got != 1000 {
-				t.Errorf("cash = %d after rejected request, want unchanged 1000", got)
+			if got := state.Cash(); got != 100000 {
+				t.Errorf("cash = %d after rejected request, want unchanged 100000p", got)
 			}
 		})
 	}
@@ -206,8 +206,8 @@ func TestSelectUnknownOffice404(t *testing.T) {
 	if off := state.SelectedOffice(); off != nil {
 		t.Errorf("selected office = %v after unknown-office request, want nil", off.ID)
 	}
-	if got := state.Cash(); got != 1000 {
-		t.Errorf("cash = %d after unknown-office request, want unchanged 1000", got)
+	if got := state.Cash(); got != 100000 {
+		t.Errorf("cash = %d after unknown-office request, want unchanged 100000p", got)
 	}
 }
 
@@ -229,14 +229,14 @@ func TestSelectAlreadySelected409(t *testing.T) {
 	if off := state.SelectedOffice(); off == nil || off.ID != "office-small-01" {
 		t.Errorf("selected office = %v after second selection, want unchanged office-small-01", off)
 	}
-	if got := state.Cash(); got != 650 {
-		t.Errorf("cash = %d after rejected second selection, want unchanged 650", got)
+	if got := state.Cash(); got != 65000 {
+		t.Errorf("cash = %d after rejected second selection, want unchanged 65000p", got)
 	}
 }
 
 // TestSelectInsufficientFundsMapsTo409 verifies the HTTP-layer mapping of an insufficient-funds
 // error to 409 INSUFFICIENT_FUNDS with required/available details. M1D has no public API that
-// reduces cash below a down payment while unselected (starting £1000 covers both offices), so this
+// reduces cash below a down payment while unselected (starting 100000p covers both offices), so this
 // code path is exercised directly through the handler's error mapping rather than via doRequest; the
 // full domain behavior is covered by the game-layer tests.
 func TestSelectInsufficientFundsMapsTo409(t *testing.T) {
@@ -244,7 +244,7 @@ func TestSelectInsufficientFundsMapsTo409(t *testing.T) {
 	oh := newOfficeHandler(state)
 
 	w := httptest.NewRecorder()
-	oh.writeSelectionError(w, &game.InsufficientFundsError{Required: 350, Available: 300})
+	oh.writeSelectionError(w, &game.InsufficientFundsError{Required: 35000, Available: 30000})
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409; body=%s", w.Code, w.Body.String())
@@ -261,8 +261,8 @@ func TestSelectInsufficientFundsMapsTo409(t *testing.T) {
 	if body.Error.Code != "INSUFFICIENT_FUNDS" {
 		t.Errorf("code = %q, want INSUFFICIENT_FUNDS", body.Error.Code)
 	}
-	if body.Error.Details["required"] != float64(350) || body.Error.Details["available"] != float64(300) {
-		t.Errorf("details = %v, want required 350 available 300", body.Error.Details)
+	if body.Error.Details["required"] != float64(35000) || body.Error.Details["available"] != float64(30000) {
+		t.Errorf("details = %v, want required 35000p available 30000p", body.Error.Details)
 	}
 }
 
@@ -297,8 +297,8 @@ func TestOfficesUnsupportedMethods(t *testing.T) {
 		if rec.Code != http.StatusMethodNotAllowed || errorCode(t, rec.Body.Bytes()) != "METHOD_NOT_ALLOWED" {
 			t.Fatalf("status=%d code=%s, want 405 METHOD_NOT_ALLOWED; body=%s", rec.Code, errorCodeSafe(rec), rec.Body.String())
 		}
-		if got := state.Cash(); got != 1000 {
-			t.Errorf("cash = %d after rejected method, want unchanged 1000", got)
+		if got := state.Cash(); got != 100000 {
+			t.Errorf("cash = %d after rejected method, want unchanged 100000p", got)
 		}
 	})
 }

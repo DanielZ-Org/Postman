@@ -55,14 +55,15 @@ const footDeliveryCapacityWithLogistics = 11
 const storageTraitBonusPercent = 10
 
 // Wages (SPEC 10): foot delivery accrues a fixed wage per successfully delivered
-// package; an express package counts as one package for wages.
-const footWagePerPackage = 2
+// package; an express package counts as one package for wages. Monetary values are
+// integer pence (board decision, M2 money-unit migration).
+const footWagePerPackage = 200
 
 // Hiring (SPEC 8): the fee follows a historical high-water counter (+£50 per hire), not
-// current headcount: hire #1 costs £50, hire #2 £100, and so on.
+// current headcount: hire #1 costs £50, hire #2 £100, and so on. Values are integer pence.
 const (
-	hireBaseFee = 50
-	hireFeeStep = 50
+	hireBaseFee = 5000
+	hireFeeStep = 5000
 )
 
 // Finance schedules (SPEC 11): payroll settles every Tuesday, rent every Friday after
@@ -80,23 +81,28 @@ const (
 // Rent misses (SPEC 4.2): the first missed payment adds a one-off 20% late fee; the
 // second terminates the contract. Whether unpaid late fees themselves escalate is OPEN
 // (SPEC 16.8); the labelled temporary rule deducts the fee regardless of cash.
-const minOfficeDownPayment = 350 // cheapest new-office entry cost (small); game-over check
+const minOfficeDownPayment = 35000 // cheapest new-office entry cost (small), pence; game-over check
 
 // randIntn is indirected so generation tests can substitute a deterministic source.
 // Production uses the auto-seeded global source.
 var randIntn = rand.Intn
 
-// roundPounds rounds a fractional pound amount to the nearest integer pound, half away
-// from zero. SPEC 4.3 keeps money as integer pounds for M1, while late-delivery
-// penalties (SPEC 5.3) produce fractional amounts that must be settled somewhere.
-func roundPounds(v int) int {
+// All monetary state and constants are integer pence (board decision recorded in SPEC 4.3,
+// M2 money-unit migration): no floating point anywhere in money paths, and percentage
+// results round half away from zero to whole pence.
+
+// roundToWholePence rounds value/100 to the nearest whole number of pence, half away from
+// zero. It is the single rounding rule for every percentage-derived monetary amount (late-
+// delivery penalties SPEC 5.3, trait bonus SPEC 3.1, loan interest SPEC 11.1).
+func roundToWholePence(v int) int {
 	if v < 0 {
-		return -roundPounds(-v)
+		return -roundToWholePence(-v)
 	}
 	return (v + 50) / 100
 }
 
-// percentOf returns value * percent / 100, rounded half away from zero.
+// percentOf returns value * percent / 100 in pence, rounded half away from zero to whole
+// pence.
 func percentOf(value, percent int) int {
-	return roundPounds(value * percent)
+	return roundToWholePence(value * percent)
 }

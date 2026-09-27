@@ -104,8 +104,8 @@ func TestGetPlayerShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("response has no 'player' wrapper: %s", rec.Body.String())
 	}
-	if player["cash"] != float64(1000) || player["loan_principal"] != float64(1000) {
-		t.Errorf("cash/loan = %v/%v, want 1000/1000", player["cash"], player["loan_principal"])
+	if player["cash"] != float64(100000) || player["loan_principal"] != float64(100000) {
+		t.Errorf("cash/loan = %v/%v, want 100000p/100000p", player["cash"], player["loan_principal"])
 	}
 	if player["trait"] != "financial" {
 		t.Errorf("trait = %v, want financial", player["trait"])
@@ -161,7 +161,7 @@ func TestGetEmployeesShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("no 'hiring' object: %s", rec.Body.String())
 	}
-	if hiring["current_employee_count"] != float64(0) || hiring["total_hires_lifetime"] != float64(0) || hiring["next_hiring_fee"] != float64(50) {
+	if hiring["current_employee_count"] != float64(0) || hiring["total_hires_lifetime"] != float64(0) || hiring["next_hiring_fee"] != float64(5000) {
 		t.Errorf("hiring = %v, want 0/0/50", hiring)
 	}
 
@@ -186,7 +186,7 @@ func TestGetEmployeesShape(t *testing.T) {
 		t.Errorf("employee skills = nil, want [] (never null): %v", emp)
 	}
 	hiring = body["hiring"].(map[string]any)
-	if hiring["current_employee_count"] != float64(1) || hiring["next_hiring_fee"] != float64(100) {
+	if hiring["current_employee_count"] != float64(1) || hiring["next_hiring_fee"] != float64(10000) {
 		t.Errorf("hiring after hire = %v, want 1/100", hiring)
 	}
 }
@@ -222,7 +222,7 @@ func TestPostHireValidationErrors(t *testing.T) {
 		t.Errorf("hire malformed body = %d, want 400", rec.Code)
 	}
 
-	// The fee ladder outpaces cash: the 5th hire costs 250 against the remaining
+	// The fee ladder outpaces cash: the 5th hire costs 2500p against the remaining
 	// cash, so INSUFFICIENT_FUNDS (409) carries required/available details.
 	for i := 0; i < 4; i++ {
 		hireOne(t, h)
@@ -235,8 +235,8 @@ func TestPostHireValidationErrors(t *testing.T) {
 	if code != "INSUFFICIENT_FUNDS" {
 		t.Fatalf("error code = %v, want INSUFFICIENT_FUNDS", code)
 	}
-	if details == nil || details["required"] != float64(250) || details["available"] != float64(150) {
-		t.Errorf("details = %v, want required 250 / available 150", details)
+	if details == nil || details["required"] != float64(25000) || details["available"] != float64(15000) {
+		t.Errorf("details = %v, want required 25000p / available 15000p", details)
 	}
 }
 
@@ -372,8 +372,8 @@ func TestGetFinanceStatementIsBare(t *testing.T) {
 	if _, wrapped := body["finance"]; wrapped {
 		t.Fatalf("statement wrapped under 'finance': %s", rec.Body.String())
 	}
-	if body["cash_balance"] != float64(1000) {
-		t.Errorf("cash_balance = %v, want 1000", body["cash_balance"])
+	if body["cash_balance"] != float64(100000) {
+		t.Errorf("cash_balance = %v, want 100000p", body["cash_balance"])
 	}
 	period, _ := body["period"].(map[string]any)
 	if period == nil || period["from"] == "" || period["to"] == "" {
@@ -385,8 +385,8 @@ func TestGetFinanceStatementIsBare(t *testing.T) {
 	if income == nil || expenses == nil || liabs == nil {
 		t.Fatalf("statement sections = income %v expenses %v liabilities %v", income, expenses, liabs)
 	}
-	if liabs["loan_principal"] != float64(1000) {
-		t.Errorf("liabilities.loan_principal = %v, want 1000", liabs["loan_principal"])
+	if liabs["loan_principal"] != float64(100000) {
+		t.Errorf("liabilities.loan_principal = %v, want 100000p", liabs["loan_principal"])
 	}
 	if _, present := body["net_change"]; !present {
 		t.Errorf("statement missing net_change: %v", body)
@@ -410,8 +410,8 @@ func TestGetFinanceTransactionsNewestFirst(t *testing.T) {
 		t.Fatalf("transactions = %d, want 1 (seeded loan disbursement)", len(txns))
 	}
 	first := txns[0].(map[string]any)
-	if first["category"] != "loan_disbursement" || first["amount"] != float64(1000) {
-		t.Errorf("seeded txn = %v, want loan_disbursement +1000", first)
+	if first["category"] != "loan_disbursement" || first["amount"] != float64(100000) {
+		t.Errorf("seeded txn = %v, want loan_disbursement +100000p", first)
 	}
 	for _, key := range []string{"id", "game_datetime", "category", "amount", "description", "reference_id"} {
 		if _, present := first[key]; !present {
@@ -428,8 +428,8 @@ func TestGetFinanceTransactionsNewestFirst(t *testing.T) {
 	}
 	newest := txns[0].(map[string]any)
 	oldest := txns[1].(map[string]any)
-	if newest["category"] != "office_down_payment" || newest["amount"] != float64(-350) {
-		t.Errorf("newest = %v, want office_down_payment -350", newest)
+	if newest["category"] != "office_down_payment" || newest["amount"] != float64(-35000) {
+		t.Errorf("newest = %v, want office_down_payment -35000p", newest)
 	}
 	if oldest["category"] != "loan_disbursement" {
 		t.Errorf("oldest = %v, want loan_disbursement", oldest)
@@ -460,8 +460,8 @@ func TestGetGameStateShape(t *testing.T) {
 	if ops == nil || fin == nil {
 		t.Fatalf("operations/finance missing: %v", gs)
 	}
-	if fin["loan_principal"] != float64(1000) {
-		t.Errorf("finance.loan_principal = %v, want 1000", fin["loan_principal"])
+	if fin["loan_principal"] != float64(100000) {
+		t.Errorf("finance.loan_principal = %v, want 100000p", fin["loan_principal"])
 	}
 
 	// After selection the office section fills in.
@@ -506,10 +506,10 @@ func TestSliceRouteMethodNotAllowed(t *testing.T) {
 func TestFullSliceSelectHireGenerateAssignDeliver(t *testing.T) {
 	h, state := newTestRouter()
 
-	// 1. Select the small office: cash 1000 -> 650.
+	// 1. Select the small office: cash 100000p -> 65000p.
 	selectSmallOffice(t, h)
 
-	// 2. Hire one employee: fee 50, cash 600.
+	// 2. Hire one employee: fee 5000p, cash 60000p.
 	hire := hireOne(t, h)
 	if emp := hire["employee"].(map[string]any); emp["id"] != "emp-0001" {
 		t.Fatalf("hired id = %v, want emp-0001", emp["id"])
@@ -564,12 +564,12 @@ func TestFullSliceSelectHireGenerateAssignDeliver(t *testing.T) {
 		t.Errorf("stored_packages = %v, want at least the unassigned generated packages", ops["stored_packages"])
 	}
 
-	// 7. /player cash grew by the package revenue (base fee 5 or 7 for a normal
-	//    small/medium package; cash was 600 after hiring).
+	// 7. /player cash grew by the package revenue (base fee 500p or 700p for a
+	//    normal small/medium package; cash was 60000p after hiring).
 	rec = doRequest(t, h, http.MethodGet, "/api/v1/player", "")
 	player := decodeJSON(t, rec.Body.Bytes())["player"].(map[string]any)
-	if cash := player["cash"].(float64); cash < 605 || cash > 607 {
-		t.Errorf("cash = %v, want 605..607 (600 + one normal package fee)", cash)
+	if cash := player["cash"].(float64); cash < 60500 || cash > 60700 {
+		t.Errorf("cash = %v, want 60500p..60700p (60000p + one normal package fee)", cash)
 	}
 
 	// 8. The revenue exists as a transaction and in the weekly statement.
@@ -580,8 +580,8 @@ func TestFullSliceSelectHireGenerateAssignDeliver(t *testing.T) {
 		txn := raw.(map[string]any)
 		if txn["category"] == "package_revenue" {
 			foundRevenue = true
-			if amount := txn["amount"].(float64); amount < 5 {
-				t.Errorf("revenue amount = %v, want >= 5", amount)
+			if amount := txn["amount"].(float64); amount < 500 {
+				t.Errorf("revenue amount = %v, want >= 500p", amount)
 			}
 		}
 	}

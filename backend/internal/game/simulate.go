@@ -181,7 +181,9 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 				factor = 75 // 25% reduction
 			}
 		}
-		paid := roundPounds(p.BaseFee * factor)
+		// BaseFee is integer pence and factor a percentage, so BaseFee*factor/100 is the
+		// payout in pence; round half away from zero to whole pence (SPEC 5.3).
+		paid := roundToWholePence(p.BaseFee * factor)
 		p.Status = PackageDelivered
 		p.DeliveredAt = strPtr(at.Format(GameTimeFormat))
 		p.FinalRevenue = intPtr(paid)

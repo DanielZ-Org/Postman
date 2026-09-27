@@ -7,11 +7,11 @@ import (
 
 func TestHireFeeLadderAndCapacity(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
-	selectSmall(t, s) // cash 1000 - 350 = 650
-	s.cash = 10000    // isolate the fee ladder from affordability
+	selectSmall(t, s) // cash 100000p - 35000p = 65000p
+	s.cash = 1000000 // isolate the fee ladder from affordability (£10000 in pence)
 
-	// Five hires: fees 50, 100, 150, 200, 250 (SPEC 10.1 lifetime counter).
-	wantFees := []int{50, 100, 150, 200, 250}
+	// Five hires: fees 5000, 10000, 15000, 20000, 25000p (SPEC 8 lifetime counter).
+	wantFees := []int{5000, 10000, 15000, 20000, 25000}
 	cash := s.cash
 	for i, fee := range wantFees {
 		emp, _, err := s.HireEmployee()
@@ -47,13 +47,13 @@ func TestHireRequiresOfficeAndCash(t *testing.T) {
 	}
 
 	selectSmall(t, s)
-	s.cash = 40 // fee is 50
+	s.cash = 4000 // fee is 5000p
 	_, _, err := s.HireEmployee()
 	var ife *InsufficientFundsError
-	if !errors.As(err, &ife) || ife.Required != 50 || ife.Available != 40 {
-		t.Fatalf("hire without cash err = %v, want InsufficientFundsError{50, 40}", err)
+	if !errors.As(err, &ife) || ife.Required != 5000 || ife.Available != 4000 {
+		t.Fatalf("hire without cash err = %v, want InsufficientFundsError{5000p, 4000p}", err)
 	}
-	if s.cash != 40 {
+	if s.cash != 4000 {
 		t.Errorf("cash changed to %d, want unchanged", s.cash)
 	}
 	if s.totalHires != 0 || len(s.employees) != 0 {
@@ -81,8 +81,8 @@ func TestHirePostsHiringBonusTransaction(t *testing.T) {
 		t.Fatalf("transactions = %d, want %d (one hiring_bonus)", len(s.transactions), before+1)
 	}
 	tr := s.transactions[len(s.transactions)-1]
-	if tr.Category != CategoryHiringBonus || tr.Amount != -50 || tr.Description == "" {
-		t.Errorf("transaction = %+v, want hiring_bonus -50 with description", tr)
+	if tr.Category != CategoryHiringBonus || tr.Amount != -5000 || tr.Description == "" {
+		t.Errorf("transaction = %+v, want hiring_bonus -5000p with description", tr)
 	}
 }
 
@@ -244,8 +244,8 @@ func TestHiringStateShape(t *testing.T) {
 	if hiring.TotalHiresLifetime != 1 {
 		t.Errorf("total_hires_lifetime = %d, want 1", hiring.TotalHiresLifetime)
 	}
-	if hiring.NextHiringFee != 100 {
-		t.Errorf("next_hiring_fee = %d, want 100 (fee ladder)", hiring.NextHiringFee)
+	if hiring.NextHiringFee != 10000 {
+		t.Errorf("next_hiring_fee = %d, want 10000p (fee ladder)", hiring.NextHiringFee)
 	}
 }
 
@@ -255,8 +255,8 @@ func TestEmployeesViewShape(t *testing.T) {
 	if len(emp) != 1 || emp[0].ID != "emp-0001" {
 		t.Fatalf("employees = %+v, want one emp-0001", emp)
 	}
-	if hiring.CurrentEmployeeCount != 1 || hiring.NextHiringFee != 100 {
-		t.Errorf("hiring = %+v, want 1 employee / fee 100", hiring)
+	if hiring.CurrentEmployeeCount != 1 || hiring.NextHiringFee != 10000 {
+		t.Errorf("hiring = %+v, want 1 employee / fee 10000p", hiring)
 	}
 	// View mutation must not leak into state (plain values returned).
 	emp[0].Status = "mutated"

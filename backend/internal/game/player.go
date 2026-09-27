@@ -11,7 +11,7 @@ type Player struct {
 	LogoID        string // backend stores asset references only; empty until one exists
 	AvatarID      string
 	Trait         string // "financial" | "storage" | "logistics"; default "financial"
-	LoanPrincipal int    // integer pounds
+	LoanPrincipal int    // integer pence
 	HeadOfficeID  string // set on first office selection; empty before that
 }
 

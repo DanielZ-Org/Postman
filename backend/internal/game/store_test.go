@@ -152,6 +152,65 @@ func TestRestoreNilIsNoOp(t *testing.T) {
 	}
 }
 
+// TestRestoreMigratesV1PoundsToVPence verifies the load-time unit migration (SPEC 4.3 board
+// decision): a v1 snapshot whose monetary fields are integer pounds loads successfully, every
+// monetary value is multiplied by 100 into pence, and the state saves forward as schema v2 so
+// existing dev saves keep their values across the unit change.
+func TestRestoreMigratesV1PoundsToVPence(t *testing.T) {
+	v1 := &Snapshot{
+		Version:           1,
+		GameTime:          "1980-02-03T09:00:00",
+		Speed:             1,
+		Paused:            false,
+		Status:            GameStatusRunning,
+		Player:            Player{ID: "player-1", Name: "Daniel", Trait: "financial", LoanPrincipal: 1000},
+		Cash:              650,
+		Office:            &RuntimeOffice{ID: "office-small-01", Type: "small", IsHeadOffice: true, DownPayment: 350, WeeklyRent: 50, ContractStatus: ContractActive},
+		Packages:          []*Package{{ID: "pkg-000001", Size: "small", ServiceType: ServiceNormal, BaseFee: 12, FinalRevenue: intPtr(9), Status: PackageDelivered}},
+		Employees:         []*Employee{{ID: "emp-0001", Name: "Bob Snail", AccruedWages: 4, CurrentDeliveryMode: ModeFoot, Status: EmployeeReady}},
+		Transactions:      []Transaction{{ID: "txn-000002", GameDatetime: "1980-02-01T09:00:00", Category: CategoryOfficeDownPayment, Amount: -350}},
+		NextTxnID:         3,
+		LastGeneration:    "1980-02-03T09:00:00",
+		InterestDue:       "1980-02-29T09:00:00",
+		PayrollDue:        "1980-02-05T09:00:00",
+	}
+
+	restored := NewInitialState()
+	if err := restored.Restore(v1); err != nil {
+		t.Fatalf("Restore(v1): %v", err)
+	}
+
+	got := restored.Snapshot()
+	if got.Version != snapshotVersion {
+		t.Errorf("version = %d, want %d (saved forward as v2)", got.Version, snapshotVersion)
+	}
+	if got.Cash != 65000 || got.Player.LoanPrincipal != 100000 {
+		t.Errorf("cash/principal = %d/%d, want 65000p/100000p", got.Cash, got.Player.LoanPrincipal)
+	}
+	if got.Office == nil || got.Office.DownPayment != 35000 || got.Office.WeeklyRent != 5000 {
+		t.Errorf("office = %+v, want down payment 35000p weekly rent 5000p", got.Office)
+	}
+	if len(got.Packages) != 1 || got.Packages[0].BaseFee != 1200 || got.Packages[0].FinalRevenue == nil || *got.Packages[0].FinalRevenue != 900 {
+		t.Errorf("package = %+v, want base fee 1200p final revenue 900p", got.Packages)
+	}
+	if len(got.Employees) != 1 || got.Employees[0].AccruedWages != 400 {
+		t.Errorf("employee = %+v, want accrued wages 400p", got.Employees)
+	}
+	if len(got.Transactions) != 1 || got.Transactions[0].Amount != -35000 {
+		t.Errorf("transaction = %+v, want amount -35000p", got.Transactions)
+	}
+
+	// The migrated state must be usable: a fresh snapshot round-trips as v2 without further change.
+	onceMore := NewInitialState()
+	if err := onceMore.Restore(got); err != nil {
+		t.Fatalf("Restore(v2): %v", err)
+	}
+	again := onceMore.Snapshot()
+	if again.Cash != got.Cash || again.Version != snapshotVersion {
+		t.Errorf("second restore drifted: %+v vs %+v", again, got)
+	}
+}
+
 // TestRestoreRejectsUnknownVersion: a snapshot from a future schema must fail
 // without touching state.
 func TestRestoreRejectsUnknownVersion(t *testing.T) {

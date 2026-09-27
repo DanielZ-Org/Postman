@@ -3,7 +3,7 @@ package game
 import "time"
 
 // Transaction is the SPEC 11.3 finance record: every monetary mutation appends one
-// instead of silently changing cash. Amounts are signed integer pounds (negative =
+// instead of silently changing cash. Amounts are signed integer pence (negative =
 // expense). GameDatetime is authoritative fictional game time, never the host wall
 // clock.
 type Transaction struct {
@@ -93,7 +93,7 @@ func itoa(n int) string {
 
 // FinanceStatement is the SPEC 11.3 statement view for GET /api/v1/finance: current
 // balance plus an income/expense breakdown for one game week and the liability
-// overview. All amounts are integer pounds.
+// overview. All amounts are integer pence.
 type FinanceStatement struct {
 	CashBalance int            `json:"cash_balance"`
 	Period      FinancePeriod  `json:"period"`
