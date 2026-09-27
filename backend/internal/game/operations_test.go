@@ -311,3 +311,137 @@ func TestGameViewMatchesState(t *testing.T) {
 		t.Error("view mutation leaked into state cash")
 	}
 }
+
+// newCarModeState builds a state with an active small office and a ready employee
+// switched to car mode. Hire #3 carries the driving licence (SPEC 7.2 hire cycle),
+// which is the skill gate for car mode.
+func newCarModeState(t *testing.T) (*GameState, string) {
+	t.Helper()
+	s := newAssignedOfficeState(t)                 // emp-0001: no skills
+	if _, _, err := s.HireEmployee(); err != nil { // emp-0002: bicycle skill
+		t.Fatalf("hire #2: %v", err)
+	}
+	if _, _, err := s.HireEmployee(); err != nil { // emp-0003: bicycle + driving licence
+		t.Fatalf("hire #3: %v", err)
+	}
+	emp, err := s.SetEmployeeMode("emp-0003", ModeCar)
+	if err != nil || emp.CurrentDeliveryMode != ModeCar {
+		t.Fatalf("SetEmployeeMode(car) = %v/%s, want success in car mode", err, emp.CurrentDeliveryMode)
+	}
+	return s, "emp-0003"
+}
+
+// TestCarModeCapacityFiftyUnits verifies the car-mode capacity of 50 units per run
+// (SPEC 9.2): a batch of 50 normal packages fits exactly, express packages consume
+// two units each so 26 express overflow with the mode-specific error details, and
+// 25 express fit exactly.
+func TestCarModeCapacityFiftyUnits(t *testing.T) {
+	s, carEmp := newCarModeState(t)
+
+	// Run 1: 50 normal packages = exactly 50 capacity units (SPEC 9.2).
+	for i := 1; i <= 50; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	}
+	if _, ids, err := s.AssignDelivery(carEmp, 50); err != nil || len(ids) != 50 {
+		t.Fatalf("car assign of 50 normal = %v/%d ids, want success with 50", err, len(ids))
+	}
+	// Advance run phases only (no package generation), so the stored inventory stays
+	// exact for the capacity assertions below.
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T13:00:00")) // delivery ends
+
+	// Express double-consumption (SPEC 9.2): 26 express = 52 units > 50 available.
+	for i := 51; i <= 76; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceExpress, mustParseTime(t, "1980-02-01T08:30:00"), mustParseTime(t, "1980-02-03T08:30:00"))
+	}
+	_, _, err := s.AssignDelivery(carEmp, 26)
+	var capErr *CapacityError
+	if !errors.As(err, &capErr) {
+		t.Fatalf("car over-units err = %T (%v), want *CapacityError", err, err)
+	}
+	if capErr.Available != carDeliveryCapacity || capErr.Requested != 52 || capErr.StoredAvailable != 26 {
+		t.Errorf("capacity error = %+v, want available %d / requested 52 / stored 26", capErr, carDeliveryCapacity)
+	}
+
+	// 25 express = exactly 50 units: fits (second run of the day).
+	if _, ids, err := s.AssignDelivery(carEmp, 25); err != nil || len(ids) != 25 {
+		t.Fatalf("car assign of 25 express = %v/%d ids, want success with 25", err, len(ids))
+	}
+}
+
+// TestCarModeRunsPerDayLimitAndRollover verifies the car-mode budget of two local
+// runs per working day (SPEC 9.3): a third same-day run is rejected and the budget
+// resets on the next game date so a fresh run succeeds. Far runs stay deferred
+// (SPEC 16.11), so car runs consume the same local daily slots as foot.
+func TestCarModeRunsPerDayLimitAndRollover(t *testing.T) {
+	s, carEmp := newCarModeState(t)
+	for i := 1; i <= 3; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	}
+
+	// Run 1: 09:00 -> pack 10:00 -> deliver 13:00.
+	if _, _, err := s.AssignDelivery(carEmp, 1); err != nil {
+		t.Fatalf("run 1: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00"))
+	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00"))
+
+	// Run 2: 13:00 -> pack 14:00 -> deliver 17:00 (exactly at closing, allowed).
+	if _, _, err := s.AssignDelivery(carEmp, 1); err != nil {
+		t.Fatalf("run 2: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T14:00:00"))
+	s.processLocked(mustParseTime(t, "1980-02-01T17:00:00"))
+	if s.employees[2].RunsToday != 2 {
+		t.Fatalf("runs_today = %d, want 2", s.employees[2].RunsToday)
+	}
+
+	// Run 3 same day: rejected (SPEC 9.3).
+	if _, _, err := s.AssignDelivery(carEmp, 1); !errors.Is(err, ErrRunsLimitReached) {
+		t.Fatalf("run 3 err = %v, want ErrRunsLimitReached", err)
+	}
+
+	// Day rollover (SPEC 9.3): jump the clock to Monday opening and let the
+	// simulation process the day change, which resets the run budget.
+	s.Clock.restore(mustParseTime(t, "1980-02-04T09:00:00"), 1, false)
+	s.processLocked(s.Clock.Now())
+	if s.employees[2].RunsToday != 0 {
+		t.Fatalf("runs_today after rollover = %d, want 0", s.employees[2].RunsToday)
+	}
+
+	// A fresh run succeeds on the new day (Monday is open; cycle finishes by closing).
+	if _, _, err := s.AssignDelivery(carEmp, 1); err != nil {
+		t.Fatalf("run 4 next day: %v", err)
+	}
+}
+
+// TestCarModeParameters pins the car-mode parameters (SPEC 9.2/9.3/10) and guards
+// the foot values against regression: capacity 50 units per run (+10% logistics with
+// floor rounding), two local runs per working day, exactly 250p wage per delivered
+// package. Far runs stay deferred (SPEC 9.3/16.11): no far-destination state or
+// budget exists in this milestone.
+func TestCarModeParameters(t *testing.T) {
+	if got := deliveryCapacityUnits(ModeCar, false); got != 50 {
+		t.Errorf("car capacity = %d, want 50", got)
+	}
+	if got := deliveryCapacityUnits(ModeCar, true); got != 55 {
+		t.Errorf("car capacity with logistics = %d, want 55 (floor of +10%%)", got)
+	}
+	if got := localRunsPerDay(ModeCar); got != 2 {
+		t.Errorf("car runs per day = %d, want 2", got)
+	}
+	if got := wagePerPackageFor(ModeCar); got != 250 {
+		t.Errorf("car wage = %d, want exactly 250p (board decision)", got)
+	}
+
+	// Foot values unchanged.
+	if got := deliveryCapacityUnits(ModeFoot, false); got != footDeliveryCapacity {
+		t.Errorf("foot capacity = %d, want %d", got, footDeliveryCapacity)
+	}
+	if got := localRunsPerDay(ModeFoot); got != footRunsPerDay {
+		t.Errorf("foot runs per day = %d, want %d", got, footRunsPerDay)
+	}
+	if got := wagePerPackageFor(ModeFoot); got != footWagePerPackage {
+		t.Errorf("foot wage = %d, want %d", got, footWagePerPackage)
+	}
+}

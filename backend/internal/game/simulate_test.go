@@ -264,6 +264,28 @@ func TestRunLifecycleDeliversAndAccrues(t *testing.T) {
 	}
 }
 
+// TestCarModeWageAccruesExactly250pPerPackage verifies the car-mode wage of exactly
+// £2.50 per delivered package (board decision; SPEC 10): a normal and an express
+// package each accrue one 250p unit, so two deliveries accrue 500p with no rounding.
+func TestCarModeWageAccruesExactly250pPerPackage(t *testing.T) {
+	s, carEmp := newCarModeState(t)
+	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T09:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	addStoredPackage(s, "pkg-000002", "small", ServiceExpress, mustParseTime(t, "1980-02-01T09:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+
+	if _, ids, err := s.AssignDelivery(carEmp, 2); err != nil || len(ids) != 2 {
+		t.Fatalf("AssignDelivery = %v/%d ids, want success with 2", err, len(ids))
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00")) // delivery ends
+
+	if s.employees[2].AccruedWages != 2*carWagePerPackage {
+		t.Errorf("accrued wages = %d, want %d (exactly £2.50 per package)", s.employees[2].AccruedWages, 2*carWagePerPackage)
+	}
+	if s.employees[2].PackagesDeliveredThisWeek != 2 {
+		t.Errorf("weekly deliveries = %d, want 2 (express counts once for wages)", s.employees[2].PackagesDeliveredThisWeek)
+	}
+}
+
 func TestLateDeliveryPaysReducedRevenue(t *testing.T) {
 	s := newStateAt(t, "1980-02-01T09:00:00")
 	selectSmall(t, s)

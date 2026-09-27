@@ -39,8 +39,9 @@ type Employee struct {
 	AccruedWages              int      `json:"accrued_wages"`
 	Status                    string   `json:"status"`
 
-	// RunsToday counts delivery runs started for RunsTodayKey (the game date); the
-	// foot limit of two runs per working day (SPEC 9.3) is enforced against it.
+	// RunsToday counts local delivery runs started for RunsTodayKey (the game date);
+	// the mode-specific daily budget (foot and car: two per working day, SPEC 9.3)
+	// is enforced against it.
 	RunsToday    int    `json:"runs_today"`
 	RunsTodayKey string `json:"runs_today_key"`
 }

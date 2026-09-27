@@ -159,9 +159,11 @@ func (s *GameState) processRunsLocked(now time.Time) bool {
 
 // completeRunLocked settles one finished delivery cycle at time at: each package
 // pays its base fee (reduced 25% normal / 75% express when late, SPEC 5.3), revenue
-// posts as one package_revenue transaction, wages accrue per package (SPEC 10: £2
-// foot, express counts once), and daily counters update. The financial-trait bonus
-// is NOT applied here — it settles at the day rollover (SPEC 3.1).
+// posts as one package_revenue transaction, wages accrue per delivered package at the
+// employee's mode-specific rate (SPEC 10: foot £2.00, car exactly £2.50; an express
+// package counts once despite consuming two capacity units), and daily counters update.
+// The financial-trait bonus is NOT applied here — it settles at the day rollover
+// (SPEC 3.1).
 func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 	var revenue, delivered int
 	for _, id := range run.PackageIDs {
@@ -197,7 +199,9 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 	if emp := s.findEmployeeLocked(run.EmployeeID); emp != nil {
 		if delivered > 0 {
 			emp.PackagesDeliveredThisWeek += delivered
-			emp.AccruedWages += delivered * footWagePerPackage
+			// The mode is locked while a run is in flight (SetEmployeeMode requires the
+			// employee to be ready), so the completion-time mode is the assignment mode.
+			emp.AccruedWages += delivered * wagePerPackageFor(emp.CurrentDeliveryMode)
 		}
 		emp.Status = EmployeeReady
 	}

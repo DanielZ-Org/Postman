@@ -32,32 +32,88 @@ const expressChancePercent = 3
 const expressFreeDuration = 28 * 24 * time.Hour
 
 // Delivery-run geometry (SPEC 9.1): a walking cycle is 1 game hour of packing followed
-// by 3 game hours out for delivery.
+// by 3 game hours out for delivery. Bicycle and car reuse this same geometry as a
+// labelled temporary assumption until SPEC defines per-mode timing (SPEC 9.1: bicycle
+// and car timing "can be defined separately later without changing this model").
 const (
 	packingDuration    = time.Hour
 	deliveryDuration   = 3 * time.Hour
 	assignmentDuration = packingDuration + deliveryDuration
 )
 
-// Delivery capacities and limits for foot delivery (SPEC 9.2/9.3): 10 capacity units
-// per run and 2 local runs per working day. Normal packages consume 1 unit, express 2.
+// Delivery capacities per mode (SPEC 9.2): foot 10, car 50 units per run; bicycle keeps
+// the foot value until M2-3 lands its own parameters. Normal packages consume 1 unit,
+// express 2 — the same consumption in every mode.
 const (
 	footDeliveryCapacity = 10
-	footRunsPerDay       = 2
+	carDeliveryCapacity  = 50 // SPEC 9.2: car capacity per run (M2-4)
+)
+
+// Local runs per working day per mode (SPEC 9.3): foot and car 2; bicycle keeps the
+// foot value until M2-3 lands its own parameters. Far runs stay deferred
+// (SPEC 9.3/16.11), so every budget is local-only.
+const (
+	footRunsPerDay = 2
+	carRunsPerDay  = 2 // SPEC 9.3: two local car runs per working day (M2-4)
 )
 
 // Logistics-trait capacity bonus: SPEC 3.1 gives +10% delivery capacity; SPEC 16.6
-// leaves the rounding OPEN. The labelled temporary rule is floor(10 * 1.1) = 11.
-const footDeliveryCapacityWithLogistics = 11
+// leaves the rounding OPEN. The labelled temporary rule is floor(base * 1.1), applied
+// per mode: foot floor(10 * 1.1) = 11, car floor(50 * 1.1) = 55.
+const (
+	footDeliveryCapacityWithLogistics = 11
+	carDeliveryCapacityWithLogistics  = 55
+)
 
 // Storage-trait capacity bonus: SPEC 3.1 gives +10% usable storage capacity. The
 // catalogue capacities are exact multiples of 10, so the bonus needs no rounding rule.
 const storageTraitBonusPercent = 10
 
-// Wages (SPEC 10): foot delivery accrues a fixed wage per successfully delivered
-// package; an express package counts as one package for wages. Monetary values are
+// Wages per delivered package by mode (SPEC 10), integer pence: foot £2.00, car exactly
+// £2.50 (board decision — integer pence makes it exact). An express package counts as
+// one package for wages despite consuming two capacity units. Monetary values are
 // integer pence (board decision, M2 money-unit migration).
-const footWagePerPackage = 200
+const (
+	footWagePerPackage = 200
+	carWagePerPackage  = 250 // board decision: exactly £2.50 per delivered package (M2-4)
+)
+
+// deliveryCapacityUnits returns the usable capacity units for one run in the given mode
+// (SPEC 9.2): foot 10, car 50; bicycle keeps the foot value until M2-3 lands its own
+// parameters. The logistics trait adds +10% with floor rounding (SPEC 3.1, SPEC 16.6
+// OPEN — labelled temporary rule).
+func deliveryCapacityUnits(mode string, hasLogistics bool) int {
+	if mode == ModeCar {
+		if hasLogistics {
+			return carDeliveryCapacityWithLogistics // +10%, floor (SPEC 3.1/16.6 labelled)
+		}
+		return carDeliveryCapacity
+	}
+	if hasLogistics {
+		return footDeliveryCapacityWithLogistics // +10%, floor (SPEC 16.6 labelled)
+	}
+	return footDeliveryCapacity // foot; bicycle until M2-3 lands its own parameters
+}
+
+// localRunsPerDay returns the local runs allowed per working day in the given mode
+// (SPEC 9.3): foot and car 2; bicycle keeps the foot value until M2-3 lands its own
+// parameters. Far runs stay deferred (SPEC 9.3/16.11), so the budget is local-only.
+func localRunsPerDay(mode string) int {
+	if mode == ModeCar {
+		return carRunsPerDay
+	}
+	return footRunsPerDay // foot; bicycle until M2-3 lands its own parameters
+}
+
+// wagePerPackageFor returns the wage accrued per delivered package in integer pence for
+// one mode (SPEC 10): foot £2.00, car exactly £2.50 (board decision). Bicycle keeps
+// the foot rate until M2-3 lands its own value.
+func wagePerPackageFor(mode string) int {
+	if mode == ModeCar {
+		return carWagePerPackage
+	}
+	return footWagePerPackage // foot; bicycle until M2-3 lands its own value
+}
 
 // Hiring (SPEC 8): the fee follows a historical high-water counter (+£50 per hire), not
 // current headcount: hire #1 costs £50, hire #2 £100, and so on. Values are integer pence.

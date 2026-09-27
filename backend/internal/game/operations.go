@@ -19,8 +19,8 @@ var (
 	ErrGameOver            = errors.New("game is over")                                   // GAME_OVER 409 (labelled)
 )
 
-// CapacityError reports that a requested assignment batch does not fit the foot
-// delivery capacity or the stored inventory (INSUFFICIENT_DELIVERY_CAPACITY 400).
+// CapacityError reports that a requested assignment batch does not fit the employee's
+// mode-specific delivery capacity or the stored inventory (INSUFFICIENT_DELIVERY_CAPACITY 400).
 type CapacityError struct {
 	EmployeeID      string
 	Available       int // usable capacity units for this run
@@ -32,8 +32,9 @@ func (e *CapacityError) Error() string {
 	return fmt.Sprintf("delivery capacity exceeded: %d requested of %d available", e.Requested, e.Available)
 }
 
-// CycleError reports that a full 4-hour walking cycle starting now would not finish
-// before today's closing time (CYCLE_WOULD_NOT_FINISH 409).
+// CycleError reports that a full 4-hour delivery cycle starting now would not finish
+// before today's closing time (CYCLE_WOULD_NOT_FINISH 409). Bicycle and car reuse the
+// foot geometry as a labelled temporary assumption until SPEC defines per-mode timing.
 type CycleError struct {
 	RequestedStart string
 	ClosingTime    string // empty when the office has no opening today
@@ -139,10 +140,10 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 	}
 	batch := stored[:batchCount]
 
-	usable := footDeliveryCapacity
-	if s.player.Trait == "logistics" {
-		usable = footDeliveryCapacityWithLogistics // +10%, floor (SPEC 16.6 labelled)
-	}
+	// Mode-specific capacity (SPEC 9.2): foot 10, car 50; the logistics trait adds
+	// +10% with floor rounding (SPEC 3.1/16.6 labelled). Bicycle keeps the foot value
+	// until M2-3 lands its own parameters.
+	usable := deliveryCapacityUnits(emp.CurrentDeliveryMode, s.player.Trait == "logistics")
 	units := 0
 	for _, p := range batch {
 		units += p.DeliveryCapacityUnits
@@ -162,7 +163,9 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 		emp.RunsTodayKey = dayKey(now)
 		emp.RunsToday = 0
 	}
-	if emp.RunsToday >= footRunsPerDay {
+	// The per-day budget is mode-specific and local-only (SPEC 9.3); far runs stay
+	// deferred (SPEC 16.11), so car runs consume the same daily slots as foot.
+	if emp.RunsToday >= localRunsPerDay(emp.CurrentDeliveryMode) {
 		return nil, nil, ErrRunsLimitReached
 	}
 
