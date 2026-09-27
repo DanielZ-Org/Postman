@@ -451,7 +451,7 @@ func TestCarModeParameters(t *testing.T) {
 // which is the skill gate for bicycle mode.
 func newBicycleModeState(t *testing.T) (*GameState, string) {
 	t.Helper()
-	s := newAssignedOfficeState(t) // emp-0001: no skills
+	s := newAssignedOfficeState(t)                 // emp-0001: no skills
 	if _, _, err := s.HireEmployee(); err != nil { // emp-0002: bicycle skill
 		t.Fatalf("hire #2: %v", err)
 	}
