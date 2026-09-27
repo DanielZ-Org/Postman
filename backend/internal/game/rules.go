@@ -41,78 +41,94 @@ const (
 	assignmentDuration = packingDuration + deliveryDuration
 )
 
-// Delivery capacities per mode (SPEC 9.2): foot 10, car 50 units per run; bicycle keeps
-// the foot value until M2-3 lands its own parameters. Normal packages consume 1 unit,
-// express 2 — the same consumption in every mode.
+// Delivery capacities per mode (SPEC 9.2): foot 10, bicycle 20, car 50 units per run.
+// Normal packages consume 1 unit, express 2 — the same consumption in every mode.
 const (
-	footDeliveryCapacity = 10
-	carDeliveryCapacity  = 50 // SPEC 9.2: car capacity per run (M2-4)
+	footDeliveryCapacity    = 10
+	bicycleDeliveryCapacity = 20 // SPEC 9.2: bicycle capacity per run (M2-3)
+	carDeliveryCapacity     = 50 // SPEC 9.2: car capacity per run (M2-4)
 )
 
-// Local runs per working day per mode (SPEC 9.3): foot and car 2; bicycle keeps the
-// foot value until M2-3 lands its own parameters. Far runs stay deferred
-// (SPEC 9.3/16.11), so every budget is local-only.
+// Local runs per working day per mode (SPEC 9.3): foot and car 2, bicycle 3. Far runs
+// stay deferred (SPEC 9.3/16.11), so every budget is local-only.
 const (
-	footRunsPerDay = 2
-	carRunsPerDay  = 2 // SPEC 9.3: two local car runs per working day (M2-4)
+	footRunsPerDay    = 2
+	bicycleRunsPerDay = 3 // SPEC 9.3: three local bicycle runs per working day (M2-3)
+	carRunsPerDay     = 2 // SPEC 9.3: two local car runs per working day (M2-4)
 )
 
 // Logistics-trait capacity bonus: SPEC 3.1 gives +10% delivery capacity; SPEC 16.6
 // leaves the rounding OPEN. The labelled temporary rule is floor(base * 1.1), applied
-// per mode: foot floor(10 * 1.1) = 11, car floor(50 * 1.1) = 55.
+// per mode: foot floor(10 * 1.1) = 11, bicycle floor(20 * 1.1) = 22,
+// car floor(50 * 1.1) = 55.
 const (
-	footDeliveryCapacityWithLogistics = 11
-	carDeliveryCapacityWithLogistics  = 55
+	footDeliveryCapacityWithLogistics    = 11
+	bicycleDeliveryCapacityWithLogistics = 22 // floor(20 * 1.1), SPEC 3.1/16.6 labelled
+	carDeliveryCapacityWithLogistics     = 55
 )
 
 // Storage-trait capacity bonus: SPEC 3.1 gives +10% usable storage capacity. The
 // catalogue capacities are exact multiples of 10, so the bonus needs no rounding rule.
 const storageTraitBonusPercent = 10
 
-// Wages per delivered package by mode (SPEC 10), integer pence: foot £2.00, car exactly
-// £2.50 (board decision — integer pence makes it exact). An express package counts as
-// one package for wages despite consuming two capacity units. Monetary values are
-// integer pence (board decision, M2 money-unit migration).
+// Wages per delivered package by mode (SPEC 10), integer pence: foot £2.00, bicycle
+// £3.00, car exactly £2.50 (board decision — integer pence makes it exact). An express
+// package counts as one package for wages despite consuming two capacity units.
+// Monetary values are integer pence (board decision, M2 money-unit migration).
 const (
-	footWagePerPackage = 200
-	carWagePerPackage  = 250 // board decision: exactly £2.50 per delivered package (M2-4)
+	footWagePerPackage    = 200
+	bicycleWagePerPackage = 300 // SPEC 10: £3.00 per delivered package (M2-3)
+	carWagePerPackage     = 250 // board decision: exactly £2.50 per delivered package (M2-4)
 )
 
 // deliveryCapacityUnits returns the usable capacity units for one run in the given mode
-// (SPEC 9.2): foot 10, car 50; bicycle keeps the foot value until M2-3 lands its own
-// parameters. The logistics trait adds +10% with floor rounding (SPEC 3.1, SPEC 16.6
-// OPEN — labelled temporary rule).
+// (SPEC 9.2): foot 10, bicycle 20, car 50. The logistics trait adds +10% with floor
+// rounding (SPEC 3.1, SPEC 16.6 OPEN — labelled temporary rule).
 func deliveryCapacityUnits(mode string, hasLogistics bool) int {
-	if mode == ModeCar {
+	switch mode {
+	case ModeCar:
 		if hasLogistics {
 			return carDeliveryCapacityWithLogistics // +10%, floor (SPEC 3.1/16.6 labelled)
 		}
 		return carDeliveryCapacity
+	case ModeBicycle:
+		if hasLogistics {
+			return bicycleDeliveryCapacityWithLogistics // +10%, floor (SPEC 3.1/16.6 labelled)
+		}
+		return bicycleDeliveryCapacity
+	default: // foot
+		if hasLogistics {
+			return footDeliveryCapacityWithLogistics // +10%, floor (SPEC 16.6 labelled)
+		}
+		return footDeliveryCapacity
 	}
-	if hasLogistics {
-		return footDeliveryCapacityWithLogistics // +10%, floor (SPEC 16.6 labelled)
-	}
-	return footDeliveryCapacity // foot; bicycle until M2-3 lands its own parameters
 }
 
 // localRunsPerDay returns the local runs allowed per working day in the given mode
-// (SPEC 9.3): foot and car 2; bicycle keeps the foot value until M2-3 lands its own
-// parameters. Far runs stay deferred (SPEC 9.3/16.11), so the budget is local-only.
+// (SPEC 9.3): foot and car 2, bicycle 3. Far runs stay deferred (SPEC 9.3/16.11), so
+// the budget is local-only.
 func localRunsPerDay(mode string) int {
-	if mode == ModeCar {
+	switch mode {
+	case ModeCar:
 		return carRunsPerDay
+	case ModeBicycle:
+		return bicycleRunsPerDay
+	default: // foot
+		return footRunsPerDay
 	}
-	return footRunsPerDay // foot; bicycle until M2-3 lands its own parameters
 }
 
 // wagePerPackageFor returns the wage accrued per delivered package in integer pence for
-// one mode (SPEC 10): foot £2.00, car exactly £2.50 (board decision). Bicycle keeps
-// the foot rate until M2-3 lands its own value.
+// one mode (SPEC 10): foot £2.00, bicycle £3.00, car exactly £2.50 (board decision).
 func wagePerPackageFor(mode string) int {
-	if mode == ModeCar {
+	switch mode {
+	case ModeCar:
 		return carWagePerPackage
+	case ModeBicycle:
+		return bicycleWagePerPackage
+	default: // foot
+		return footWagePerPackage
 	}
-	return footWagePerPackage // foot; bicycle until M2-3 lands its own value
 }
 
 // Hiring (SPEC 8): the fee follows a historical high-water counter (+£50 per hire), not

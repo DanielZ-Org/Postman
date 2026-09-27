@@ -445,3 +445,156 @@ func TestCarModeParameters(t *testing.T) {
 		t.Errorf("foot wage = %d, want %d", got, footWagePerPackage)
 	}
 }
+
+// newBicycleModeState builds a state with an active small office and a ready employee
+// switched to bicycle mode. Hire #2 carries the bicycle skill (SPEC 7.2 hire cycle),
+// which is the skill gate for bicycle mode.
+func newBicycleModeState(t *testing.T) (*GameState, string) {
+	t.Helper()
+	s := newAssignedOfficeState(t) // emp-0001: no skills
+	if _, _, err := s.HireEmployee(); err != nil { // emp-0002: bicycle skill
+		t.Fatalf("hire #2: %v", err)
+	}
+	emp, err := s.SetEmployeeMode("emp-0002", ModeBicycle)
+	if err != nil || emp.CurrentDeliveryMode != ModeBicycle {
+		t.Fatalf("SetEmployeeMode(bicycle) = %v/%s, want success in bicycle mode", err, emp.CurrentDeliveryMode)
+	}
+	return s, "emp-0002"
+}
+
+// TestBicycleModeCapacityTwentyUnits verifies the bicycle-mode capacity of 20 units per
+// run (SPEC 9.2): a batch of 20 normal packages fits exactly, express packages consume
+// two units each so 11 express overflow with the mode-specific error details, and
+// 10 express fit exactly.
+func TestBicycleModeCapacityTwentyUnits(t *testing.T) {
+	s, bikeEmp := newBicycleModeState(t)
+
+	// Run 1: 20 normal packages = exactly 20 capacity units (SPEC 9.2).
+	for i := 1; i <= 20; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	}
+	if _, ids, err := s.AssignDelivery(bikeEmp, 20); err != nil || len(ids) != 20 {
+		t.Fatalf("bicycle assign of 20 normal = %v/%d ids, want success with 20", err, len(ids))
+	}
+	// Advance run phases only (no package generation), so the stored inventory stays
+	// exact for the capacity assertions below.
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T13:00:00")) // delivery ends
+
+	// Express double-consumption (SPEC 9.2): 11 express = 22 units > 20 available.
+	for i := 21; i <= 31; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceExpress, mustParseTime(t, "1980-02-01T08:30:00"), mustParseTime(t, "1980-02-03T08:30:00"))
+	}
+	_, _, err := s.AssignDelivery(bikeEmp, 11)
+	var capErr *CapacityError
+	if !errors.As(err, &capErr) {
+		t.Fatalf("bicycle over-units err = %T (%v), want *CapacityError", err, err)
+	}
+	if capErr.Available != bicycleDeliveryCapacity || capErr.Requested != 22 || capErr.StoredAvailable != 11 {
+		t.Errorf("capacity error = %+v, want available %d / requested 22 / stored 11", capErr, bicycleDeliveryCapacity)
+	}
+
+	// 10 express = exactly 20 units: fits (second run of the day).
+	if _, ids, err := s.AssignDelivery(bikeEmp, 10); err != nil || len(ids) != 10 {
+		t.Fatalf("bicycle assign of 10 express = %v/%d ids, want success with 10", err, len(ids))
+	}
+}
+
+// TestBicycleModeRunsPerDayLimitAndRollover verifies the bicycle-mode budget of three
+// local runs per working day (SPEC 9.3): after two completed runs a third same-day
+// assignment succeeds where a foot-mode employee would hit ErrRunsLimitReached, a fourth
+// is rejected by the budget check, and the budget resets on the next game date so a fresh
+// run succeeds.
+func TestBicycleModeRunsPerDayLimitAndRollover(t *testing.T) {
+	s, bikeEmp := newBicycleModeState(t)
+	for i := 1; i <= 4; i++ {
+		addStoredPackage(s, packageID(i), "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	}
+
+	// Run 1: assign -> pack until 10:00 -> deliver until 13:00.
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("run 1: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00")) // delivery ends
+
+	// Run 2: assign -> packing drains at 14:00 -> deliver until 17:00 (exactly at
+	// closing, allowed).
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("run 2: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T14:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T17:00:00")) // delivery ends
+	if s.employees[1].RunsToday != 2 {
+		t.Fatalf("runs_today = %d, want 2", s.employees[1].RunsToday)
+	}
+
+	// Run 3 same day: with two runs consumed the bicycle budget of three allows a third
+	// assignment (a foot-mode employee would hit ErrRunsLimitReached here).
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("run 3 = %v, want success (bicycle budget is three runs per day)", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T14:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T17:00:00")) // delivery ends
+	if s.employees[1].RunsToday != 3 {
+		t.Fatalf("runs_today = %d, want 3", s.employees[1].RunsToday)
+	}
+
+	// Run 4 same day: rejected by the budget check (SPEC 9.3).
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); !errors.Is(err, ErrRunsLimitReached) {
+		t.Fatalf("run 4 err = %v, want ErrRunsLimitReached", err)
+	}
+
+	// Day rollover (SPEC 9.3): jump the clock to Monday opening and let the
+	// simulation process the day change, which resets the run budget.
+	s.Clock.restore(mustParseTime(t, "1980-02-04T09:00:00"), 1, false)
+	s.processLocked(s.Clock.Now())
+	if s.employees[1].RunsToday != 0 {
+		t.Fatalf("runs_today after rollover = %d, want 0", s.employees[1].RunsToday)
+	}
+
+	// A fresh run succeeds on the new day (Monday is open; cycle finishes by closing).
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("run 5 next day: %v", err)
+	}
+}
+
+// TestBicycleModeParameters pins the bicycle-mode parameters (SPEC 9.2/9.3/10) and guards
+// the foot and car values against regression: capacity 20 units per run (+10% logistics
+// with floor rounding), three local runs per working day, exactly 300p wage per delivered
+// package. Far runs stay deferred (SPEC 9.3/16.11): no far-destination state or budget
+// exists in this milestone.
+func TestBicycleModeParameters(t *testing.T) {
+	if got := deliveryCapacityUnits(ModeBicycle, false); got != 20 {
+		t.Errorf("bicycle capacity = %d, want 20", got)
+	}
+	if got := deliveryCapacityUnits(ModeBicycle, true); got != 22 {
+		t.Errorf("bicycle capacity with logistics = %d, want 22 (floor of +10%%)", got)
+	}
+	if got := localRunsPerDay(ModeBicycle); got != 3 {
+		t.Errorf("bicycle runs per day = %d, want 3", got)
+	}
+	if got := wagePerPackageFor(ModeBicycle); got != 300 {
+		t.Errorf("bicycle wage = %d, want exactly 300p (SPEC 10)", got)
+	}
+
+	// Foot and car values unchanged by M2-3.
+	if got := deliveryCapacityUnits(ModeFoot, false); got != footDeliveryCapacity {
+		t.Errorf("foot capacity = %d, want %d", got, footDeliveryCapacity)
+	}
+	if got := localRunsPerDay(ModeFoot); got != footRunsPerDay {
+		t.Errorf("foot runs per day = %d, want %d", got, footRunsPerDay)
+	}
+	if got := wagePerPackageFor(ModeFoot); got != footWagePerPackage {
+		t.Errorf("foot wage = %d, want %d", got, footWagePerPackage)
+	}
+	if got := deliveryCapacityUnits(ModeCar, false); got != carDeliveryCapacity {
+		t.Errorf("car capacity = %d, want %d", got, carDeliveryCapacity)
+	}
+	if got := localRunsPerDay(ModeCar); got != carRunsPerDay {
+		t.Errorf("car runs per day = %d, want %d", got, carRunsPerDay)
+	}
+	if got := wagePerPackageFor(ModeCar); got != carWagePerPackage {
+		t.Errorf("car wage = %d, want %d", got, carWagePerPackage)
+	}
+}

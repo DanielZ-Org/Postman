@@ -140,9 +140,8 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 	}
 	batch := stored[:batchCount]
 
-	// Mode-specific capacity (SPEC 9.2): foot 10, car 50; the logistics trait adds
-	// +10% with floor rounding (SPEC 3.1/16.6 labelled). Bicycle keeps the foot value
-	// until M2-3 lands its own parameters.
+	// Mode-specific capacity (SPEC 9.2): foot 10, bicycle 20, car 50; the logistics
+	// trait adds +10% with floor rounding (SPEC 3.1/16.6 labelled).
 	usable := deliveryCapacityUnits(emp.CurrentDeliveryMode, s.player.Trait == "logistics")
 	units := 0
 	for _, p := range batch {
