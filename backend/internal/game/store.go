@@ -24,6 +24,7 @@ type Snapshot struct {
 	Paused            bool           `json:"paused"`
 	Status            string         `json:"status"`
 	Player            Player         `json:"player"`
+	TraitSelected     bool           `json:"trait_selected"`
 	Cash              int            `json:"cash"`
 	Office            *RuntimeOffice `json:"office"`
 	Packages          []*Package     `json:"packages"`
@@ -71,6 +72,7 @@ func (s *GameState) Snapshot() *Snapshot {
 		Paused:            paused,
 		Status:            s.status,
 		Player:            s.player,
+		TraitSelected:     s.traitSelected,
 		Cash:              s.cash,
 		Transactions:      append([]Transaction(nil), s.transactions...),
 		NextTxnID:         s.nextTxnID,
@@ -170,6 +172,9 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	s.Clock.restore(gameTime, snap.Speed, snap.Paused)
 	s.status = snap.Status
 	s.player = snap.Player
+	// A save written before trait selection existed lacks the field; Go's zero value on
+	// unmarshal defaults it to false (not explicitly selected), which is correct.
+	s.traitSelected = snap.TraitSelected
 	s.cash = snap.Cash
 	s.selectedOffice = snap.Office
 	if s.selectedOffice != nil {

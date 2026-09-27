@@ -299,6 +299,7 @@ type GameState struct {
 	employees      []*Employee
 	runs           []*Run
 	status         string // GameStatusRunning or GameStatusGameOver
+	traitSelected  bool   // true once the player has explicitly selected a trait (SPEC 3); the default trait does not count
 
 	nextTxnID  int // 1-based; the initial loan transaction consumes 1
 	nextPkgSeq int // 1-based package id sequence

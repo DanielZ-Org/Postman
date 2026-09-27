@@ -15,11 +15,40 @@ type Player struct {
 	HeadOfficeID  string // set on first office selection; empty before that
 }
 
-// Default player identity for a new game. The trait selection UI/API is not part of
-// the first slice, so the labelled temporary default is the SPEC 3 example trait.
+// Trait values selectable per SPEC 3 ("one player trait may be selected"). A new
+// game starts with the SPEC 3 example trait as its labelled temporary default.
+const (
+	TraitFinancial = "financial"
+	TraitStorage   = "storage"
+	TraitLogistics = "logistics"
+)
+
+// validTraits is the canonical set of selectable traits in deterministic order. It
+// drives both validation and the INVALID_TRAIT error details, so the wire contract
+// never drifts from the accepted values.
+var validTraits = []string{TraitFinancial, TraitStorage, TraitLogistics}
+
+// ValidTraits returns a copy of the allowed trait values in canonical order (for API
+// error details). Callers cannot mutate the canonical set through the returned slice.
+func ValidTraits() []string {
+	return append([]string(nil), validTraits...)
+}
+
+// isAllowedTrait reports whether trait is one of the SPEC 3 selectable traits.
+func isAllowedTrait(trait string) bool {
+	for _, v := range validTraits {
+		if v == trait {
+			return true
+		}
+	}
+	return false
+}
+
+// Default player identity for a new game. The labelled temporary default is the SPEC 3
+// example trait; SelectTrait (SPEC 3) replaces it with the player's one-time choice.
 var defaultPlayer = Player{
 	ID:            "player-1",
 	Name:          "Daniel",
-	Trait:         "financial",
+	Trait:         TraitFinancial,
 	LoanPrincipal: StartingCash,
 }

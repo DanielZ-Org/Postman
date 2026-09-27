@@ -35,6 +35,10 @@ func NewRouter(state *game.GameState) http.Handler {
 	v1.HandleFunc("/player", gh.handlePlayer)
 	v1.HandleFunc("/office", gh.handleOffice)
 
+	// Player trait selection (SPEC 3): one-time, before the first office selection.
+	th := newTraitHandler(state)
+	v1.HandleFunc("/player/trait", th.handleSelectTrait)
+
 	// Office catalogue plus head-office selection (SPEC 4.3).
 	oh := newOfficeHandler(state)
 	v1.HandleFunc("/offices", oh.handleList)

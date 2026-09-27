@@ -18,6 +18,11 @@ type PlayerView struct {
 func (s *GameState) PlayerView() PlayerView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.playerViewLocked()
+}
+
+// playerViewLocked assembles the read-only player projection; the caller must hold s.mu.
+func (s *GameState) playerViewLocked() PlayerView {
 	v := PlayerView{
 		ID:            s.player.ID,
 		Name:          s.player.Name,
