@@ -14,6 +14,7 @@ The project starts deliberately small: build a complete vertical slice in which 
 - Persistence: SQLite.
 - Git/GitHub: develop and commit locally; push to the organisation repository when ready.
 - GitHub Issues + Projects should become the working task/roadmap system.
+- Automated agent workflow: implementation tasks receive independent QA review before being marked complete.
 
 The API contract is the boundary between backend and frontend. The backend owns authoritative game state and game rules. The frontend requests actions and renders returned state; it must not calculate authoritative business/game logic.
 
