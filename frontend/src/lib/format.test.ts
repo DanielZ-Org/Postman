@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { capitalize, formatGameDate, formatGameDateTime, formatMoney, formatStatus } from './format'
 
 describe('formatMoney', () => {
-  it('formats positive pounds with two decimals', () => {
-    expect(formatMoney(1000)).toBe('£1,000.00')
-    expect(formatMoney(12.5)).toBe('£12.50')
+  it('formats integer pence as pounds with two decimals', () => {
+    expect(formatMoney(100000)).toBe('£1,000.00')
+    expect(formatMoney(35000)).toBe('£350.00')
+    expect(formatMoney(999)).toBe('£9.99')
   })
 
   it('formats negative amounts with a leading minus', () => {
-    expect(formatMoney(-350)).toBe('-£350.00')
+    expect(formatMoney(-35000)).toBe('-£350.00')
   })
 
   it('formats zero', () => {

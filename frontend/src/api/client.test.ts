@@ -110,7 +110,7 @@ describe('api.getGameState', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeGameState())))
     const state = await api.getGame()
     expect(state).not.toBeNull()
-    expect(state?.player.cash).toBe(1000)
+    expect(state?.player.cash).toBe(100000) // integer pence (SPEC 4.3)
     expect(state?.office?.id).toBe('office-small-01')
     expect(state?.operations.stored_packages).toBe(6)
   })
@@ -311,7 +311,7 @@ describe('api.getEmployees', () => {
     )
     const result = await api.getEmployees()
     expect(result.employees).toHaveLength(1)
-    expect(result.hiring?.next_hiring_fee).toBe(100)
+    expect(result.hiring?.next_hiring_fee).toBe(10000) // integer pence
   })
 
   it('supports a bare array payload', async () => {
@@ -327,7 +327,7 @@ describe('api.getFinance / getTransactions', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeFinance())))
     const finance = await api.getFinance()
     expect(finance?.income.total).toBe(0)
-    expect(finance?.liabilities.next_rent_amount).toBe(50)
+    expect(finance?.liabilities.next_rent_amount).toBe(5000) // integer pence
   })
 
   it('returns null when finance route is missing', async () => {

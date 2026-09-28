@@ -79,7 +79,7 @@ describe('TopBar', () => {
   it('marks cash negative', () => {
     render(
       <TopBar
-        game={makeGameApi({ state: makeGameState({ player: { id: 'p', cash: -120, trait: 'financial' } }) })}
+        game={makeGameApi({ state: makeGameState({ player: { id: 'p', cash: -12000, trait: 'financial' } }) })}
       />,
     )
     const cash = screen.getByText('-£120.00')

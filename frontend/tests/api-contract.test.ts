@@ -52,7 +52,7 @@ describe('mock API health', () => {
     expect(body.office).toBeNull()
 
     const player = body.player as Record<string, unknown>
-    expect(player.cash).toBe(1000)
+    expect(player.cash).toBe(100000) // integer pence (SPEC 4.3)
     expect(player.trait).toBe('financial')
 
     const game = body.game as Record<string, unknown>
@@ -110,7 +110,7 @@ describe('POST /offices/select', () => {
     expect(office?.is_head_office).toBeUndefined()
 
     const player = game.player as Record<string, unknown>
-    expect(player.cash).toBe(650)
+    expect(player.cash).toBe(65000) // 100000p - 35000p down payment
 
     const ops = game.operations as Record<string, unknown>
     expect(Number(ops.stored_packages)).toBeGreaterThan(0)
@@ -460,12 +460,12 @@ describe('error envelope', () => {
 })
 
 describe('debug reset', () => {
-  it('restores cash to 1000 and clears the office', async () => {
+  it('restores cash to 100000p and clears the office', async () => {
     await post('/offices/select', { office_id: 'office-small-01' })
     await post('/employees/hire')
     await post('/debug/reset')
     const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
-    expect((game.player as Record<string, unknown>).cash).toBe(1000)
+    expect((game.player as Record<string, unknown>).cash).toBe(100000)
     expect(game.office).toBeNull()
   })
 })

@@ -11,7 +11,7 @@ describe('EmployeesPanel', () => {
       <EmployeesPanel
         game={makeGameApi({
           employees: [],
-          hiring: makeHiring({ current_employee_count: 0, total_hires_lifetime: 0, next_hiring_fee: 50 }),
+          hiring: makeHiring({ current_employee_count: 0, total_hires_lifetime: 0, next_hiring_fee: 5000 }),
         })}
       />,
     )
@@ -32,8 +32,8 @@ describe('EmployeesPanel', () => {
     render(
       <EmployeesPanel
         game={makeGameApi({
-          state: makeGameState({ player: { id: 'p', cash: 10, trait: 'financial' } }),
-          hiring: makeHiring({ next_hiring_fee: 100 }),
+          state: makeGameState({ player: { id: 'p', cash: 1000, trait: 'financial' } }), // £10 in pence
+          hiring: makeHiring({ next_hiring_fee: 10000 }),
           employees: [],
         })}
       />,

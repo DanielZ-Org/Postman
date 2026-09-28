@@ -8,12 +8,12 @@ describe('FinancePanel', () => {
     render(
       <FinancePanel
         game={makeGameApi({
-          state: makeGameState({ player: { id: 'player-1', cash: 650, trait: 'financial' } }),
+          state: makeGameState({ player: { id: 'player-1', cash: 65000, trait: 'financial' } }), // pence
           finance: makeFinance({
-            cash_balance: 650,
-            income: { package_revenue: 120, trait_bonus: 12, total: 132 },
-            expenses: { employee_wages: 40, rent: 50, loan_interest: 0, hiring: 100, other: 0, total: 190 },
-            net_change: -58,
+            cash_balance: 65000,
+            income: { package_revenue: 12000, trait_bonus: 1200, total: 13200 },
+            expenses: { employee_wages: 4000, rent: 5000, loan_interest: 0, hiring: 10000, other: 0, total: 19000 },
+            net_change: -5800,
           }),
         })}
       />,
@@ -41,10 +41,10 @@ describe('FinancePanel', () => {
       <FinancePanel
         game={makeGameApi({
           transactions: [
-            makeTransaction({ id: 'txn-1', amount: -350, category: 'office_down_payment' }),
+            makeTransaction({ id: 'txn-1', amount: -35000, category: 'office_down_payment' }),
             makeTransaction({
               id: 'txn-2',
-              amount: 12,
+              amount: 1200,
               category: 'package_revenue',
               description: 'Delivery revenue',
             }),
@@ -62,7 +62,7 @@ describe('FinancePanel', () => {
     render(
       <FinancePanel
         game={makeGameApi({
-          state: makeGameState({ player: { id: 'p', cash: -10, trait: 'financial' } }),
+          state: makeGameState({ player: { id: 'p', cash: -1000, trait: 'financial' } }),
         })}
       />,
     )

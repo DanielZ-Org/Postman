@@ -11,7 +11,8 @@ import type {
   Transaction,
 } from './types'
 
-const STARTING_CASH = 1000
+// Starting cash in integer pence (SPEC 4.3: £1,000).
+const STARTING_CASH = 100000
 
 function apiBase(): string {
   const configured = (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_BASE

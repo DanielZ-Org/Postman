@@ -11,7 +11,7 @@ describe('PackagesPanel', () => {
     makePackage({
       id: 'pkg-003',
       status: 'delivered',
-      final_revenue: 15,
+      final_revenue: 1500,
       delivered_at: '1980-02-01T15:00:00.000Z',
       assigned_employee_id: 'emp-001',
     }),

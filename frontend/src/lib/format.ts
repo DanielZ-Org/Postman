@@ -1,9 +1,11 @@
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export function formatMoney(amount: number): string {
-  const sign = amount < 0 ? '-' : ''
-  const abs = Math.abs(amount)
-  return `${sign}£${abs.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// Monetary wire values are integer pence (SPEC 4.3); display is pounds with two
+// decimals.
+export function formatMoney(pence: number): string {
+  const sign = pence < 0 ? '-' : ''
+  const pounds = Math.abs(pence) / 100
+  return `${sign}£${pounds.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function formatGameDateTime(iso: string): string {

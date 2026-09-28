@@ -3,7 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 const START_MS = Date.UTC(1980, 1, 1, 9, 0, 0)
 const GAME_MS_PER_REAL_MS = 120
 const WALK_CAPACITY = 10
-const WAGE_FOOT = 2
+// Monetary values are integer pence (SPEC 4.3), matching the real backend wire contract.
+const WAGE_FOOT = 200
 const PACK_MS = 60 * 60 * 1000
 const DELIVER_MS = 3 * 60 * 60 * 1000
 const OPEN_SLOTS: { dow: number; openMin: number; closeMin: number }[] = [
@@ -98,8 +99,8 @@ const OFFERS: {
     id: 'office-small-01',
     type: 'small',
     is_head_office: false,
-    down_payment: 350,
-    weekly_rent: 50,
+    down_payment: 35000, // integer pence (SPEC 4.3)
+    weekly_rent: 5000,
     rent_prepaid_weeks: 4,
     next_rent_due: null,
     storage: { base_capacity: 100, current_capacity: 100, maximum_capacity: 150, used_units: 0 },
@@ -114,8 +115,8 @@ const OFFERS: {
     id: 'office-large-01',
     type: 'large',
     is_head_office: false,
-    down_payment: 450,
-    weekly_rent: 75,
+    down_payment: 45000, // integer pence (SPEC 4.3)
+    weekly_rent: 7500,
     rent_prepaid_weeks: 4,
     next_rent_due: null,
     storage: { base_capacity: 150, current_capacity: 150, maximum_capacity: 250, used_units: 0 },
@@ -225,8 +226,8 @@ function createState(): MockState {
     speed: 1,
     paused: false,
     status: 'running',
-    cash: 1000,
-    loanPrincipal: 1000,
+    cash: 100000, // integer pence (SPEC 4.3)
+    loanPrincipal: 100000,
     trait: 'financial',
     office: null,
     packages: [],
@@ -237,7 +238,7 @@ function createState(): MockState {
         id: 'txn-000001',
         game_datetime: isoFromMs(START_MS),
         category: 'loan_disbursement',
-        amount: 1000,
+        amount: 100000,
         description: 'Starting loan',
         reference_id: 'loan-1',
       },
@@ -276,7 +277,7 @@ function addTxn(state: MockState, category: string, amount: number, description:
     reference_id: ref,
   })
   state.nextTxn += 1
-  state.cash = Math.round((state.cash + amount) * 100) / 100
+  state.cash += amount // integer pence
 }
 
 function storageUsed(state: MockState): number {
@@ -294,7 +295,7 @@ function spawnPackage(state: MockState, atMs: number): void {
   const isExpressMonth = atMs >= START_MS + 28 * 86_400_000
   const express = isExpressMonth && Math.random() < 0.03
   const size: 'small' | 'medium' = Math.random() < 0.7 ? 'small' : 'medium'
-  const baseFee = express ? (size === 'small' ? 12 : 15) : size === 'small' ? 5 : 7
+  const baseFee = express ? (size === 'small' ? 1200 : 1500) : size === 'small' ? 500 : 700
   const deadline = express ? 2 * 86_400_000 : 5 * 86_400_000
 
   state.packages.push({
@@ -325,7 +326,7 @@ function completeRun(state: MockState, run: Run, atMs: number): void {
     if (!pkg) continue
     const late = pkg.due_at < isoFromMs(atMs)
     const factor = late ? (pkg.service_type === 'express' ? 0.25 : 0.75) : 1
-    const paid = Math.round(pkg.base_fee * factor * 100) / 100
+    const paid = Math.round(pkg.base_fee * factor)
     pkg.status = 'delivered'
     pkg.delivered_at = isoFromMs(atMs)
     pkg.final_revenue = paid
@@ -333,20 +334,19 @@ function completeRun(state: MockState, run: Run, atMs: number): void {
     count += 1
   }
 
-  revenue = Math.round(revenue * 100) / 100
   if (revenue > 0) {
     addTxn(state, 'package_revenue', revenue, `Delivered ${count} package(s)`, run.employee_id, atMs)
     if (state.trait === 'financial') {
-      const bonus = Math.round(revenue * 0.1 * 100) / 100
+      const bonus = Math.round(revenue * 0.1)
       addTxn(state, 'financial_trait_bonus', bonus, 'Financial trait +10% revenue', 'trait-financial', atMs)
     }
   }
 
-  const wage = Math.round(count * WAGE_FOOT * 100) / 100
+  const wage = count * WAGE_FOOT
   if (emp) {
     emp.status = 'ready'
     emp.packages_delivered_this_week += count
-    emp.accrued_wages = Math.round((emp.accrued_wages + wage) * 100) / 100
+    emp.accrued_wages += wage
   }
 
   if (dayKey(atMs) !== state.deliveredTodayKey) {
@@ -358,9 +358,8 @@ function completeRun(state: MockState, run: Run, atMs: number): void {
 
 function settlePayroll(state: MockState, atMs: number): void {
   const total = state.employees.reduce((sum, e) => sum + e.accrued_wages, 0)
-  const rounded = Math.round(total * 100) / 100
-  if (rounded > 0) {
-    addTxn(state, 'employee_wages', -rounded, 'Tuesday payroll', null, atMs)
+  if (total > 0) {
+    addTxn(state, 'employee_wages', -total, 'Tuesday payroll', null, atMs)
     for (const e of state.employees) e.accrued_wages = 0
   }
 }
@@ -384,14 +383,14 @@ function chargeRent(state: MockState, atMs: number): void {
     addTxn(state, 'rent_late_fee', 0, 'Office contract terminated after missed rent', office.id, atMs)
     return
   }
-  const fee = Math.round(office.weekly_rent * 0.2 * 100) / 100
+  const fee = Math.round(office.weekly_rent * 0.2)
   office.next_rent_due_ms += 7 * 86_400_000
   addTxn(state, 'rent_late_fee', -fee, 'First missed rent — 20% late fee', office.id, atMs)
 }
 
 function chargeInterest(state: MockState, atMs: number): void {
   if (atMs < state.interestDueMs) return
-  const interest = Math.round(state.loanPrincipal * 0.05 * 100) / 100
+  const interest = Math.round(state.loanPrincipal * 0.05)
   addTxn(state, 'loan_interest', -interest, 'Four-week loan interest (5%)', 'loan-1', atMs)
   state.interestDueMs += 28 * 86_400_000
 }
@@ -537,7 +536,7 @@ function gameResponse(state: MockState, nowMs: number) {
   const used = storageUsed(state)
   return {
     game: { status: state.status, game_datetime: isoFromMs(nowMs), speed: state.speed },
-    player: { id: 'player-1', cash: Math.round(state.cash * 100) / 100, trait: state.trait },
+    player: { id: 'player-1', cash: state.cash, trait: state.trait },
     // SPEC 14.2: the /game projection carries an office only while the contract is
     // active. A terminated contract is visible through GET /office instead.
     office: active
@@ -555,7 +554,7 @@ function gameResponse(state: MockState, nowMs: number) {
       delivered_today: state.deliveredToday,
     },
     finance: {
-      accrued_wages: Math.round(state.employees.reduce((s, e) => s + e.accrued_wages, 0) * 100) / 100,
+      accrued_wages: state.employees.reduce((s, e) => s + e.accrued_wages, 0),
       next_rent: active ? active.weekly_rent : 0,
       loan_principal: state.loanPrincipal,
     },
@@ -651,30 +650,30 @@ function financeResponse(state: MockState, nowMs: number) {
     else other += abs
   }
 
-  const round = (n: number) => Math.round(n * 100) / 100
-  const incomeTotal = round(packageRevenue + traitBonus)
-  const expenseTotal = round(wages + rent + interest + hiring + other)
-  const accrued = round(state.employees.reduce((s, e) => s + e.accrued_wages, 0))
+  // All monetary values are integer pence (SPEC 4.3); sums stay exact.
+  const incomeTotal = packageRevenue + traitBonus
+  const expenseTotal = wages + rent + interest + hiring + other
+  const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
   const active = state.office && state.office.contract_status === 'active' ? state.office : null
 
   return {
-    cash_balance: round(state.cash),
+    cash_balance: state.cash,
     period: { from: fromIso, to: toIso },
-    income: { package_revenue: round(packageRevenue), trait_bonus: round(traitBonus), total: incomeTotal },
+    income: { package_revenue: packageRevenue, trait_bonus: traitBonus, total: incomeTotal },
     expenses: {
-      employee_wages: round(wages),
-      rent: round(rent),
-      loan_interest: round(interest),
-      hiring: round(hiring),
-      other: round(other),
+      employee_wages: wages,
+      rent: rent,
+      loan_interest: interest,
+      hiring: hiring,
+      other: other,
       total: expenseTotal,
     },
-    net_change: round(incomeTotal - expenseTotal),
+    net_change: incomeTotal - expenseTotal,
     liabilities: {
-      loan_principal: round(state.loanPrincipal),
+      loan_principal: state.loanPrincipal,
       accrued_employee_wages: accrued,
       next_rent_amount: active ? active.weekly_rent : 0,
-      next_interest_estimate: round(state.loanPrincipal * 0.05),
+      next_interest_estimate: Math.round(state.loanPrincipal * 0.05),
     },
   }
 }
@@ -846,7 +845,7 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
         hiring: {
           current_employee_count: state.employees.length,
           total_hires_lifetime: state.totalHires,
-          next_hiring_fee: (state.totalHires + 1) * 50,
+          next_hiring_fee: (state.totalHires + 1) * 5000, // integer pence
         },
       })
       return true
@@ -867,7 +866,7 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
         respond(err.status, err.body)
         return true
       }
-      const fee = (state.totalHires + 1) * 50
+      const fee = (state.totalHires + 1) * 5000
       if (state.cash < fee) {
         const err = httpError(400, 'INSUFFICIENT_FUNDS', 'Not enough cash for the hiring fee.', {
           cash: state.cash,
@@ -895,7 +894,7 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       respond(200, { employee: emp, hiring: {
         current_employee_count: state.employees.length,
         total_hires_lifetime: state.totalHires,
-        next_hiring_fee: (state.totalHires + 1) * 50,
+        next_hiring_fee: (state.totalHires + 1) * 5000,
       } })
       return true
     }

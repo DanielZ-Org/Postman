@@ -23,7 +23,7 @@ describe('OverviewPanel (delivery flow)', () => {
         makePackage({ id: 'pkg-001', status: 'stored' }),
         makePackage({ id: 'pkg-002', status: 'stored' }),
         makePackage({ id: 'pkg-003', status: 'out_for_delivery', assigned_employee_id: 'emp-001' }),
-        makePackage({ id: 'pkg-004', status: 'delivered', final_revenue: 9, delivered_at: '1980-02-01T14:00:00.000Z' }),
+        makePackage({ id: 'pkg-004', status: 'delivered', final_revenue: 900, delivered_at: '1980-02-01T14:00:00.000Z' }),
       ],
     })
     render(<OverviewPanel game={game} />)

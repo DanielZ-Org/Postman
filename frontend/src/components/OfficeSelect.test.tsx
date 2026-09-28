@@ -37,7 +37,7 @@ describe('OfficeSelect', () => {
   it('disables offices the player cannot afford', () => {
     const game = makeGameApi({
       state: makeGameState({
-        player: { id: 'p', cash: 100, trait: 'financial' },
+        player: { id: 'p', cash: 1000, trait: 'financial' }, // £10 in pence
         office: null,
       }),
       offices: [makeOfficeOffer({ id: 'small' })],

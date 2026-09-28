@@ -9,14 +9,14 @@ function finishedGame(overrides: Partial<GameApi> = {}): GameApi {
   return makeGameApi({
     state: makeGameState({
       game: { status: 'game_over', game_datetime: '1980-03-08T16:30:00.000Z', speed: 1 },
-      player: { id: 'player-1', cash: 42, trait: 'financial' },
+      player: { id: 'player-1', cash: 4200, trait: 'financial' }, // pence
       office: null,
-      finance: { accrued_wages: 18, next_rent: 0, loan_principal: 1000 },
+      finance: { accrued_wages: 1800, next_rent: 0, loan_principal: 100000 },
     }),
     office: makeOffice({ contract_status: 'terminated', missed_rent_payments: 2 }),
     packages: [
-      makePackage({ id: 'pkg-1', status: 'delivered', final_revenue: 12, delivered_at: '1980-02-01T14:00:00.000Z' }),
-      makePackage({ id: 'pkg-2', status: 'delivered', final_revenue: 8, delivered_at: '1980-02-02T14:00:00.000Z' }),
+      makePackage({ id: 'pkg-1', status: 'delivered', final_revenue: 1200, delivered_at: '1980-02-01T14:00:00.000Z' }),
+      makePackage({ id: 'pkg-2', status: 'delivered', final_revenue: 800, delivered_at: '1980-02-02T14:00:00.000Z' }),
       makePackage({ id: 'pkg-3', status: 'stored' }),
     ],
     gameOver: true,

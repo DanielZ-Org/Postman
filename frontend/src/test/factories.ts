@@ -30,8 +30,8 @@ export function makeOffice(overrides: Partial<Office> = {}): Office {
     id: 'office-small-01',
     type: 'small',
     is_head_office: true,
-    down_payment: 350,
-    weekly_rent: 50,
+    down_payment: 35000, // integer pence (SPEC 4.3)
+    weekly_rent: 5000,
     rent_prepaid_weeks: 4,
     next_rent_due: '1980-02-29T00:00:00.000Z',
     storage: {
@@ -54,8 +54,8 @@ export function makeOfficeOffer(overrides: Partial<OfficeOffer> = {}): OfficeOff
   return {
     id: 'office-small-01',
     type: 'small',
-    down_payment: 350,
-    weekly_rent: 50,
+    down_payment: 35000, // integer pence (SPEC 4.3)
+    weekly_rent: 5000,
     rent_prepaid_weeks: 4,
     storage: { base: 100, max: 150 },
     employee_capacity: 5,
@@ -88,7 +88,7 @@ export function makeGameState(overrides: Partial<GameState> = {}): GameState {
     },
     player: {
       id: 'player-1',
-      cash: 1000,
+      cash: 100000, // integer pence (SPEC 4.3)
       trait: 'financial',
       ...overrides.player,
     },
@@ -101,7 +101,7 @@ export function makeGameState(overrides: Partial<GameState> = {}): GameState {
     },
     finance: {
       accrued_wages: 0,
-      next_rent: 50,
+      next_rent: 5000, // integer pence (SPEC 4.3)
       loan_principal: 0,
       ...overrides.finance,
     },
@@ -116,7 +116,7 @@ export function makePackage(overrides: Partial<Package> = {}): Package {
     destination_type: 'local',
     storage_units: 1,
     delivery_capacity_units: 1,
-    base_fee: 8,
+    base_fee: 800, // integer pence (SPEC 4.3)
     received_at: '1980-02-01T09:05:00.000Z',
     due_at: '1980-02-01T17:00:00.000Z',
     status: 'stored',
@@ -146,14 +146,14 @@ export function makeHiring(overrides: Partial<HiringState> = {}): HiringState {
   return {
     current_employee_count: 1,
     total_hires_lifetime: 1,
-    next_hiring_fee: 100,
+    next_hiring_fee: 10000, // integer pence (SPEC 4.3)
     ...overrides,
   }
 }
 
 export function makeFinance(overrides: Partial<FinanceStatement> = {}): FinanceStatement {
   const base: FinanceStatement = {
-    cash_balance: 1000,
+    cash_balance: 100000, // integer pence (SPEC 4.3)
     period: {
       from: '1980-02-01T00:00:00.000Z',
       to: '1980-02-28T23:59:59.999Z',
@@ -175,7 +175,7 @@ export function makeFinance(overrides: Partial<FinanceStatement> = {}): FinanceS
     liabilities: {
       loan_principal: 0,
       accrued_employee_wages: 0,
-      next_rent_amount: 50,
+      next_rent_amount: 5000, // integer pence (SPEC 4.3)
       next_interest_estimate: 0,
     },
   }
@@ -194,7 +194,7 @@ export function makeTransaction(overrides: Partial<Transaction> = {}): Transacti
     id: 'txn-000001',
     game_datetime: '1980-02-01T09:00:00.000Z',
     category: 'office_down_payment',
-    amount: -350,
+    amount: -35000, // integer pence (SPEC 4.3)
     description: 'Office down payment',
     reference_id: 'office-small-01',
     ...overrides,
@@ -215,8 +215,8 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
       makeOfficeOffer({
         id: 'office-large-01',
         type: 'large',
-        down_payment: 450,
-        weekly_rent: 75,
+        down_payment: 45000, // integer pence (SPEC 4.3)
+        weekly_rent: 7500,
         employee_capacity: 7,
         storage: { base: 150, max: 250 },
       }),
@@ -228,7 +228,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
       makePackage({
         id: 'pkg-004',
         status: 'delivered',
-        final_revenue: 12,
+        final_revenue: 1200, // integer pence (SPEC 4.3)
         delivered_at: '1980-02-01T14:00:00.000Z',
       }),
     ],
