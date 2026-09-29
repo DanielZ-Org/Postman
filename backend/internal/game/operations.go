@@ -98,8 +98,8 @@ func (s *GameState) hiringStateLocked() HiringState {
 
 // AssignDelivery validates and commits one delivery assignment under s.mu. The
 // backend picks the actual packages by canonical eligibility and priority (SPEC 9):
-// stored only, express before normal, earliest due first (the priority rule is OPEN
-// in SPEC 16.4; express-then-due is the labelled choice). Validation order:
+// stored only, express before normal, earliest due first (priority decided SPEC
+// 16.4). Validation order:
 // game over; employee exists (EMPLOYEE_NOT_FOUND); employee ready (EMPLOYEE_BUSY);
 // stored inventory (NO_STORED_PACKAGES); batch fits capacity
 // (INSUFFICIENT_DELIVERY_CAPACITY); daily run budget (RUNS_LIMIT_REACHED);
@@ -122,8 +122,7 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 		return nil, nil, ErrEmployeeBusy
 	}
 
-	// Eligibility + canonical priority: express first, then earliest due (SPEC 16.4
-	// labelled assumption).
+	// Eligibility + canonical priority: express first, then earliest due (SPEC 16.4).
 	var stored []*Package
 	for _, p := range s.packages {
 		if p.Status == PackageStored {
@@ -198,7 +197,7 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 }
 
 // sortPackagesByPriority orders stored packages by the canonical batch priority:
-// express before normal, then earliest due date (SPEC 16.4 labelled assumption).
+// express before normal, then earliest due date (SPEC 16.4, decided).
 func sortPackagesByPriority(packages []*Package) {
 	// Insertion sort keeps the small in-memory batches simple and dependency-free.
 	for i := 1; i < len(packages); i++ {

@@ -4,7 +4,8 @@ package game
 // cash balance lives on GameState (guarded by its lock together with transactions, so
 // money mutations stay atomic); this type carries only the fields SPEC 3 models on the
 // player itself. A new game starts with a £1,000 loan whose principal never amortises
-// (SPEC 11.1: repayment mechanics are OPEN, so interest does not reduce principal).
+// (SPEC 11.1; repayment decided SPEC 16.9 — interest-only for now, voluntary repayment
+// is M3 scope).
 type Player struct {
 	ID            string
 	Name          string

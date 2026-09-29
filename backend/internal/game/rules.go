@@ -5,13 +5,14 @@ import (
 	"time"
 )
 
-// This file collects the numeric game rules used by simulation and operations. SPEC 16
-// marks several of these as OPEN or exact behaviour as undecided; each such value is
-// labelled so temporary assumptions stay visible and isolated in one place.
+// This file collects the numeric game rules used by simulation and operations.
+// SPEC 16 decisions (2026-09-29 board decision) are recorded in SPEC.md §16 and
+// mirrored here; values still labelled temporary are outside §16 (e.g. per-mode
+// delivery timing under SPEC 9.1).
 
-// Generation timing: SPEC 6 defines the canonical rate as 2 packages per open working
-// hour (one per 30 game minutes). The exact tick-boundary semantics are OPEN (SPEC
-// 16.12), so a fixed 30-minute cursor is used as the labelled temporary implementation.
+// Generation timing (SPEC 6, decided 16.12): the canonical rate is 2 packages per
+// open working hour, materialised as a fixed 30-minute cursor — deterministic,
+// exactly two ticks per open working hour.
 const generationInterval = 30 * time.Minute
 
 // generationGuardLimit caps how many generation ticks a single catch-up pass may
@@ -19,8 +20,7 @@ const generationInterval = 30 * time.Minute
 const generationGuardLimit = 400
 
 // smallSizeProbability is the percent chance that a generated package is small rather
-// than medium. SPEC 16.1 leaves the small/medium distribution OPEN; 70/30 is the
-// labelled temporary assumption (mirrors the reference frontend mock).
+// than medium (SPEC 16.1, decided 2026-09-29): 70/30, matching the reference mock.
 const smallSizeProbability = 70
 
 // expressChancePercent is the post-first-month chance that a generated package is
@@ -57,14 +57,13 @@ const (
 	carRunsPerDay     = 2 // SPEC 9.3: two local car runs per working day (M2-4)
 )
 
-// Logistics-trait capacity bonus: SPEC 3.1 gives +10% delivery capacity; SPEC 16.6
-// leaves the rounding OPEN. The labelled temporary rule is floor(base * 1.1), applied
-// per mode: foot floor(10 * 1.1) = 11, bicycle floor(20 * 1.1) = 22,
-// car floor(50 * 1.1) = 55.
+// Logistics-trait capacity bonus (SPEC 3.1, decided 16.6): +10% rounded half away
+// from zero to whole units, consistent with the SPEC 4.3 percentage rule. Current
+// bases: foot 10 -> 11, bicycle 20 -> 22, car 50 -> 55.
 const (
-	footDeliveryCapacityWithLogistics    = 11
-	bicycleDeliveryCapacityWithLogistics = 22 // floor(20 * 1.1), SPEC 3.1/16.6 labelled
-	carDeliveryCapacityWithLogistics     = 55
+	footDeliveryCapacityWithLogistics    = 11 // +10% rounded half away (SPEC 16.6)
+	bicycleDeliveryCapacityWithLogistics = 22 // +10% rounded half away (SPEC 16.6)
+	carDeliveryCapacityWithLogistics     = 55 // +10% rounded half away (SPEC 16.6)
 )
 
 // Storage-trait capacity bonus: SPEC 3.1 gives +10% usable storage capacity. The
@@ -82,23 +81,23 @@ const (
 )
 
 // deliveryCapacityUnits returns the usable capacity units for one run in the given mode
-// (SPEC 9.2): foot 10, bicycle 20, car 50. The logistics trait adds +10% with floor
-// rounding (SPEC 3.1, SPEC 16.6 OPEN — labelled temporary rule).
+// (SPEC 9.2): foot 10, bicycle 20, car 50. The logistics trait adds +10% rounded half
+// away from zero (SPEC 3.1, decided SPEC 16.6).
 func deliveryCapacityUnits(mode string, hasLogistics bool) int {
 	switch mode {
 	case ModeCar:
 		if hasLogistics {
-			return carDeliveryCapacityWithLogistics // +10%, floor (SPEC 3.1/16.6 labelled)
+			return carDeliveryCapacityWithLogistics // +10%, round half away (SPEC 16.6)
 		}
 		return carDeliveryCapacity
 	case ModeBicycle:
 		if hasLogistics {
-			return bicycleDeliveryCapacityWithLogistics // +10%, floor (SPEC 3.1/16.6 labelled)
+			return bicycleDeliveryCapacityWithLogistics // +10%, round half away (SPEC 16.6)
 		}
 		return bicycleDeliveryCapacity
 	default: // foot
 		if hasLogistics {
-			return footDeliveryCapacityWithLogistics // +10%, floor (SPEC 16.6 labelled)
+			return footDeliveryCapacityWithLogistics // +10%, round half away (SPEC 16.6)
 		}
 		return footDeliveryCapacity
 	}
@@ -138,11 +137,11 @@ const (
 	hireFeeStep = 5000
 )
 
-// Vehicle purchase prices (SPEC 12/16.7 OPEN): labelled placeholder values in pence,
-// isolated here so a later board decision changes one line.
+// Vehicle purchase prices (SPEC 12, decided 16.7): £50 per bicycle, £500 per car,
+// integer pence. Operating/fuel/maintenance costs are M3 scope.
 const (
-	bicyclePurchasePrice = 5000  // £50 placeholder
-	carPurchasePrice     = 50000 // £500 placeholder
+	bicyclePurchasePrice = 5000  // £50
+	carPurchasePrice     = 50000 // £500
 )
 
 // Hire-time skill distribution (SPEC 7.2): the player may hire employees who already
@@ -167,9 +166,9 @@ const (
 	loanReferenceID       = "loan-1"
 )
 
-// Rent misses (SPEC 4.2): the first missed payment adds a one-off 20% late fee; the
-// second terminates the contract. Whether unpaid late fees themselves escalate is OPEN
-// (SPEC 16.8); the labelled temporary rule deducts the fee regardless of cash.
+// Rent misses (SPEC 4.2, decided 16.10): the first missed payment adds a one-off 20%
+// late fee deducted regardless of cash (cash may go negative); the fee does not
+// escalate further, and the second miss terminates the contract.
 const minOfficeDownPayment = 35000 // cheapest new-office entry cost (small), pence; game-over check
 
 // randIntn is indirected so generation tests can substitute a deterministic source.

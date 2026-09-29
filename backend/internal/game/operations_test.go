@@ -416,16 +416,16 @@ func TestCarModeRunsPerDayLimitAndRollover(t *testing.T) {
 }
 
 // TestCarModeParameters pins the car-mode parameters (SPEC 9.2/9.3/10) and guards
-// the foot values against regression: capacity 50 units per run (+10% logistics with
-// floor rounding), two local runs per working day, exactly 250p wage per delivered
-// package. Far runs stay deferred (SPEC 9.3/16.11): no far-destination state or
-// budget exists in this milestone.
+// the foot values against regression: capacity 50 units per run (+10% logistics,
+// round half away from zero — SPEC 16.6), two local runs per working day, exactly
+// 250p wage per delivered package. Far runs stay deferred (SPEC 9.3/16.11): no
+// far-destination state or budget exists in this milestone.
 func TestCarModeParameters(t *testing.T) {
 	if got := deliveryCapacityUnits(ModeCar, false); got != 50 {
 		t.Errorf("car capacity = %d, want 50", got)
 	}
 	if got := deliveryCapacityUnits(ModeCar, true); got != 55 {
-		t.Errorf("car capacity with logistics = %d, want 55 (floor of +10%%)", got)
+		t.Errorf("car capacity with logistics = %d, want 55 (+10%% round half away, SPEC 16.6)", got)
 	}
 	if got := localRunsPerDay(ModeCar); got != 2 {
 		t.Errorf("car runs per day = %d, want 2", got)
@@ -560,16 +560,16 @@ func TestBicycleModeRunsPerDayLimitAndRollover(t *testing.T) {
 }
 
 // TestBicycleModeParameters pins the bicycle-mode parameters (SPEC 9.2/9.3/10) and guards
-// the foot and car values against regression: capacity 20 units per run (+10% logistics
-// with floor rounding), three local runs per working day, exactly 300p wage per delivered
-// package. Far runs stay deferred (SPEC 9.3/16.11): no far-destination state or budget
-// exists in this milestone.
+// the foot and car values against regression: capacity 20 units per run (+10% logistics,
+// round half away from zero — SPEC 16.6), three local runs per working day, exactly
+// 300p wage per delivered package. Far runs stay deferred (SPEC 9.3/16.11): no
+// far-destination state or budget exists in this milestone.
 func TestBicycleModeParameters(t *testing.T) {
 	if got := deliveryCapacityUnits(ModeBicycle, false); got != 20 {
 		t.Errorf("bicycle capacity = %d, want 20", got)
 	}
 	if got := deliveryCapacityUnits(ModeBicycle, true); got != 22 {
-		t.Errorf("bicycle capacity with logistics = %d, want 22 (floor of +10%%)", got)
+		t.Errorf("bicycle capacity with logistics = %d, want 22 (+10%% round half away, SPEC 16.6)", got)
 	}
 	if got := localRunsPerDay(ModeBicycle); got != 3 {
 		t.Errorf("bicycle runs per day = %d, want 3", got)

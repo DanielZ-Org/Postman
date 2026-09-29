@@ -212,9 +212,9 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 
 // processPayrollLocked settles due Tuesday payrolls (SPEC 10/11.2): every accrued
 // wage posts as one employee_wages transaction, accrued wages clear and the weekly
-// per-employee delivery counters reset. Missed-payroll consequences are OPEN
-// (SPEC 16.8); the labelled rule is a plain settlement whenever cash allows the
-// deduction (cash may go negative — SPEC does not forbid it).
+// per-employee delivery counters reset. Missed-payroll consequences are decided
+// (SPEC 16.8): payroll settles unconditionally — cash may go negative, wages are
+// never left unpaid, and there is no additional penalty (mood/retention is M3).
 func (s *GameState) processPayrollLocked(now time.Time) bool {
 	changed := false
 	for !now.Before(s.payrollDue) {
@@ -278,7 +278,8 @@ func (s *GameState) processRentLocked(now time.Time) bool {
 }
 
 // processInterestLocked charges due four-week loan interest (SPEC 11.1: 5% of
-// principal; principal does not amortise — repayment is OPEN, SPEC 16.9).
+// principal; repayment is decided SPEC 16.9 — interest-only, principal does not
+// amortise; a voluntary repayment endpoint is M3 scope).
 func (s *GameState) processInterestLocked(now time.Time) bool {
 	changed := false
 	for !now.Before(s.interestDue) {
@@ -297,8 +298,8 @@ func (s *GameState) processInterestLocked(now time.Time) bool {
 // only while open, only with an active contract). The cursor ticks through closed
 // periods without spawning, so no packages appear outside opening hours and no gap
 // is missed when the clock jumps. Express appears only after the first four weeks
-// (3% chance). Storage-full behaviour is OPEN (SPEC 16.3); the labelled rule is to
-// skip generation rather than overfill.
+// (3% chance). Storage-full behaviour is decided (SPEC 16.3): arrivals stop while
+// storage is full rather than overfilling, and resume when space frees.
 func (s *GameState) generatePackagesLocked(now time.Time) bool {
 	changed := false
 	guard := 0
@@ -317,7 +318,7 @@ func (s *GameState) generatePackagesLocked(now time.Time) bool {
 			continue
 		}
 		if !s.hasStorageForLocked(office, 1) {
-			continue // labelled: skip generation when storage is full (SPEC 16.3 OPEN)
+			continue // arrivals stop while storage is full (SPEC 16.3, decided)
 		}
 		size := "medium"
 		if randIntn(100) < smallSizeProbability {
