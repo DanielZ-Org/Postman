@@ -128,8 +128,8 @@ type FinanceExpense struct {
 }
 
 // FinanceLiabs lists outstanding obligations (SPEC 11.3). NextInterestEstimate is 5%
-// of principal; principal never amortises (SPEC 16.9 OPEN — interest does not reduce
-// it).
+// of principal; principal never amortises (decided SPEC 16.9 — interest-only for now,
+// voluntary repayment is M3 scope).
 type FinanceLiabs struct {
 	LoanPrincipal        int `json:"loan_principal"`
 	AccruedEmployeeWages int `json:"accrued_employee_wages"`

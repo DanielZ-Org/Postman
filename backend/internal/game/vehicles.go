@@ -82,7 +82,7 @@ func (s *GameState) VehiclesView() VehiclesView {
 // (4) sufficient cash for the purchase price. On success it increments the owned
 // count, deducts the price and appends exactly one vehicle_purchase transaction —
 // all committed together so a failed validation never leaves partial state. The
-// price is a labelled placeholder constant in rules.go (SPEC 12/16.7 OPEN).
+// price is the decided constant in rules.go (SPEC 12/16.7).
 func (s *GameState) PurchaseVehicle(vehicle string) (VehiclesView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

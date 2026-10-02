@@ -50,17 +50,22 @@ func storageUnitsFor(size string) int {
 }
 
 // baseFeeFor returns the known revenue for a size/service combination (SPEC 5.3),
-// in integer pence. Large prices are OPEN in SPEC 16.2 and unreachable until office
-// upgrades exist.
+// in integer pence. Large prices are decided (SPEC 16.2): £10 normal / £20 express —
+// unreachable until office upgrades exist, but explicit so they never fall through
+// to the medium price.
 func baseFeeFor(size, service string) int {
 	switch {
 	case size == "small" && service == ServiceExpress:
 		return 1200 // £12 in pence
 	case size == "medium" && service == ServiceExpress:
 		return 1500 // £15 in pence
+	case size == "large" && service == ServiceExpress:
+		return 2000 // £20 in pence (SPEC 16.2)
 	case size == "small":
 		return 500 // £5 in pence
-	default:
+	case size == "large":
+		return 1000 // £10 in pence (SPEC 16.2)
+	default: // medium, normal
 		return 700 // £7 in pence
 	}
 }

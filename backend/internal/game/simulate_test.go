@@ -459,7 +459,7 @@ func TestLoanInterestEveryFourWeeks(t *testing.T) {
 	if s.interestDue.Format(GameTimeFormat) != "1980-03-28T09:00:00" {
 		t.Errorf("next interest = %s, want +4 weeks", s.interestDue.Format(GameTimeFormat))
 	}
-	// Principal must not amortise (SPEC 16.9: repayment OPEN).
+	// Principal must not amortise (SPEC 16.9: interest-only for now).
 	if s.player.LoanPrincipal != 100000 {
 		t.Errorf("loan principal = %d, want unchanged 100000p", s.player.LoanPrincipal)
 	}

@@ -266,7 +266,7 @@ Decorations, equipment upgrades and capacity upgrades are **DEFERRED**, but the 
 - Second missed rent payment: terminate the office contract.
 - If the player has no valid office and cannot afford to enter a new office contract, the game ends.
 
-The precise recovery/grace-period UX is **OPEN**.
+The precise recovery/grace-period UX is decided: the first missed rent payment adds the one-off 20% late fee (deducted even if it drives cash negative), the second terminates the contract, recovery is a new office contract through office selection, and the game ends only when the player can no longer afford any office (see §16.10).
 
 ## 4.3 Office selection (M1)
 
@@ -424,7 +424,9 @@ Known prices:
 |---|---:|---:|
 | Small | £5 | £12 |
 | Medium | £7 | £15 |
-| Large | **OPEN** | **OPEN** |
+| Large | £10 | £20 |
+
+Large packages are decided (§16.2) but unreachable until office upgrades exist.
 
 Late-delivery payout penalties:
 
@@ -503,9 +505,9 @@ Express packages:
 
 Initial generated package destinations are local.
 
-The size probability distribution between small and medium is **OPEN**.
+The size probability distribution between small and medium is decided: **70% small / 30% medium** (§16.1).
 
-If warehouse capacity is insufficient, the behaviour is **OPEN**. Do not silently overfill storage.
+If warehouse capacity is insufficient, arrivals stop while storage is full and normal rates resume when space frees; storage is never overfilled (§16.3).
 
 ---
 
@@ -523,7 +525,7 @@ Initial family/archetype labels:
 
 These represent employee speed/performance characteristics.
 
-Exact numeric modifiers are **OPEN**.
+Exact numeric modifiers are decided: Snail **0.8×**, Chicken **1.0×**, Cheetah **1.2×**. They take effect when delivery-duration mechanics land (M3); until then the trait is stored but inert (§16.5).
 
 ## 7.2 Skills
 
@@ -632,7 +634,7 @@ Example intention:
 
 The backend chooses/validates the actual packages according to canonical eligibility and priority rules.
 
-Exact automatic package priority (for example express first, then earliest due date) is **OPEN**.
+Exact automatic package priority is decided: **express first, then earliest due date** (§16.4).
 
 ## 9.1 Walking delivery duration
 
@@ -684,7 +686,7 @@ Bicycle and car timing can be defined separately later without changing this mod
 
 Normal packages consume 1 capacity unit. Express consumes 2.
 
-The player's Logistics trait increases delivery capacity by 10%; exact rounding behaviour is **OPEN** and must be defined before implementation of that modifier.
+The player's Logistics trait increases delivery capacity by 10%; rounding is decided: **round half away from zero to whole units** (§16.6, consistent with the §4.3 percentage rule). For the current bases: foot 11, bicycle 22, car 55.
 
 ## 9.3 Runs per working day
 
@@ -714,7 +716,7 @@ An express package counts as **one package for wages**, despite consuming two de
 
 Wages accrue as deliveries occur and are settled every **Tuesday**.
 
-Missed-payroll consequences are **OPEN**.
+Missed-payroll consequences are decided for now: payroll settles unconditionally every Tuesday — cash may go negative, wages are never left unpaid, and there is no additional penalty. Mood/retention consequences are M3 scope (§16.8).
 
 ### Example payroll entry
 
@@ -753,7 +755,7 @@ Initial:
 - interest: **5% every four game weeks**
 - initial four-week interest on £1,000: **£50**
 
-Loan repayment mechanics/principal amortisation are **OPEN**. For now, do not assume that paying interest automatically reduces principal.
+Loan repayment is decided for now: the loan is **interest-only** — 5% of principal every four weeks, principal never decreases and there is no repayment endpoint. A voluntary lump-sum repayment UI is M3 scope (§16.9).
 
 ## 11.2 Scheduled costs
 
@@ -835,7 +837,7 @@ The architecture should leave room for:
 - drones;
 - future aircraft.
 
-Vehicle purchase prices and operating/fuel costs are **OPEN**.
+Vehicle purchase prices are decided: **£50 per bicycle, £500 per car** (integer pence on the wire). Operating/fuel/maintenance costs are M3 scope (§16.7).
 
 For MVP Slice 1, no purchased vehicle is necessary because the employee walks.
 
@@ -1062,26 +1064,26 @@ These should be addable later rather than designed into every first-pass functio
 
 ---
 
-# 16. Open decisions
+# 16. Decided rules (formerly open decisions)
 
-The following are intentionally unresolved:
+On 2026-09-29 the board decided all twelve items that were previously open. Each decision is recorded here and in the rule it governs, in the same change. The original list is kept for history:
 
-1. Small/medium package generation probability.
-2. Large package normal and express prices.
-3. Exact behaviour when storage is full.
-4. Package auto-selection priority for an assigned batch.
-5. Numeric Snail/Chicken/Cheetah speed modifiers.
-6. Logistics-trait capacity rounding.
-7. Vehicle purchase/fuel/maintenance costs.
-8. Missed payroll consequences.
-9. Loan principal repayment/amortisation.
-10. Exact grace/recovery flow after a missed rent payment.
-11. Detailed far-delivery scheduling.
-12. Exact package-generation tick boundary semantics; the canonical rate remains 2 packages per open working hour.
+1. Small/medium package generation probability → **70/30** (mirrors the reference mock).
+2. Large package normal and express prices → **£10 / £20** (unreachable until office upgrades exist; no longer falls through to the medium price).
+3. Exact behaviour when storage is full → **arrivals stop while full; rates resume when space frees; never overfill**.
+4. Package auto-selection priority for an assigned batch → **express first, then earliest due date**.
+5. Numeric Snail/Chicken/Cheetah speed modifiers → **0.8× / 1.0× / 1.2×**, effective when delivery-duration mechanics land (M3); inert until then.
+6. Logistics-trait capacity rounding → **+10% rounded half away from zero** (foot 11, bicycle 22, car 55), consistent with §4.3.
+7. Vehicle purchase/fuel/maintenance costs → purchase **£50 / £500** official; fuel/maintenance is **M3 scope**.
+8. Missed payroll consequences → **payroll settles unconditionally (cash may go negative), no further penalty**; mood/retention is M3 scope.
+9. Loan principal repayment/amortisation → **interest-only for now**; voluntary repayment UI is M3 scope.
+10. Exact grace/recovery flow after a missed rent payment → **20% late fee on the first miss (deducted regardless of cash, no further escalation), termination on the second, recovery via a new office contract, game over only when unaffordable**.
+11. Detailed far-delivery scheduling → **deferred** (see §15; confirmed by issue #14).
+12. Exact package-generation tick boundary semantics → **fixed 30-minute cursor = exactly 2 packages per open working hour**, deterministic.
 
 **Resolved (M2 board decision):** the monetary unit is integer pence globally (no whole-pound rounding, no floating point); percentage results round half away from zero to whole pence; the car wage is exactly 250p/package. This supersedes any earlier "integer pounds" wording.
 
-Do not allow a coding agent to silently decide these permanently. Temporary implementation assumptions should be clearly labelled and isolated in configuration.
+Do not allow a coding agent to silently decide new rules permanently. New open questions must be added to this list as **OPEN**, with temporary implementation assumptions clearly labelled and isolated in configuration, and resolved here together with their code change.
 
 ---
 
