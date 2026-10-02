@@ -25,6 +25,31 @@ The API contract is the boundary between backend and frontend. The backend owns 
 
 When implementation and documentation disagree, treat the discrepancy as something to resolve explicitly rather than silently changing the contract.
 
+## Security automation
+
+All workflows live in `.github/workflows/`, pin every action to a full commit SHA, run with a top-level `permissions: {}` default, and are opt-in: none is a required status check on merge.
+
+| Workflow | What it checks |
+|---|---|
+| `ci.yml` | Backend (gofmt, vet, test), frontend (lint, typecheck, unit, mock E2E), full-stack E2E |
+| `actionlint.yml` | The workflow files themselves — GitHub Actions linting |
+| `zizmor.yml` | The workflow files themselves — Actions security (pinning, injection, permissions) |
+| `gitleaks.yml` | Hardcoded secrets in history and working tree (pinned binary, checksum verified) |
+| `semgrep.yml` | General SAST (`p/default`) on Go and TypeScript |
+| `codeql.yml` | GitHub's own SAST for Go and JavaScript/TypeScript |
+| `scorecard.yml` | OpenSSF Scorecard supply-chain posture (pinning, CI practices, provenance) |
+
+Reading the results:
+
+- **Findings appear in the repository Security tab** (Code scanning → tool name). SARIF uploads are categorised per tool, so `semgrep`, `zizmor`, `codeql` and `scorecard` results are listed separately.
+- **A finding is usually a suggestion, not a build failure.** The SARIF scanners (`semgrep`, `zizmor`, `codeql`, `scorecard`) upload results without failing the build; `actionlint` and the main CI are the gates. The exception is **gitleaks, which fails the build when it finds a secret** — that one is a hard gate on purpose.
+- **Scorecard** additionally publishes its score to the OpenSSF dashboard on each run of the default branch (`publish_results`), and posts a weekly scheduled run.
+- **Workflow changes are linted automatically**: `actionlint.yml` and `zizmor.yml` trigger on paths `.github/workflows/**`. Validate locally before pushing a workflow change:
+  ```bash
+  go run github.com/rhysd/actionlint/cmd/actionlint@latest -no-color -oneline
+  zizmor --pedantic .github/workflows/
+  ```
+
 ## Screenshots
 
 Office select:
