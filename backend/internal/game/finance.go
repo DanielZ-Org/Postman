@@ -1,6 +1,9 @@
 package game
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Transaction is the SPEC 11.3 finance record: every monetary mutation appends one
 // instead of silently changing cash. Amounts are signed integer pence (negative =
@@ -26,6 +29,7 @@ const (
 	CategoryHiringBonus        = "hiring_bonus"
 	CategoryEmployeeWages      = "employee_wages"
 	CategoryLoanInterest       = "loan_interest"
+	CategoryLoanRepayment      = "loan_repayment"
 	CategoryVehiclePurchase    = "vehicle_purchase"
 	CategoryVehicleFuel        = "vehicle_fuel"
 	CategoryVehicleMaintenance = "vehicle_maintenance"
@@ -213,4 +217,36 @@ func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
 			NextInterestEstimate: percentOf(s.player.LoanPrincipal, interestPercent),
 		},
 	}
+}
+
+// ErrInvalidRepayment reports a repayment amount outside the SPEC 11.1 contract
+// (amount must be a positive integer): INVALID_REQUEST 400 at the API boundary.
+var ErrInvalidRepayment = errors.New("repayment amount must be a positive integer")
+
+// RepayLoan validates and commits one voluntary loan repayment under s.mu (SPEC 11.1,
+// decided 16.9/16.17): the amount must satisfy 0 < amount <= min(cash, principal). On
+// success the principal drops by the amount and exactly one loan_repayment transaction
+// posts for the paid amount; the next 5% interest charge recalculates from the new
+// principal. Every failure (game over, invalid amount, unaffordable) leaves state
+// unchanged.
+func (s *GameState) RepayLoan(amount int) (PlayerView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.status == GameStatusGameOver {
+		return PlayerView{}, ErrGameOver
+	}
+	if amount <= 0 {
+		return PlayerView{}, ErrInvalidRepayment
+	}
+	available := s.cash
+	if s.player.LoanPrincipal < available {
+		available = s.player.LoanPrincipal
+	}
+	if amount > available {
+		return PlayerView{}, &InsufficientFundsError{Required: amount, Available: available}
+	}
+	s.player.LoanPrincipal -= amount
+	s.postTransactionLocked(s.Clock.Now(), CategoryLoanRepayment, -amount, "Voluntary loan repayment", loanReferenceID)
+	return s.playerViewLocked(), nil
 }

@@ -1006,6 +1006,58 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       respond(200, { transactions: [...state.txns].reverse() })
       return true
     }
+    // Voluntary loan repayment (SPEC 11.1): POST {"amount": pence} with
+    // 0 < amount <= min(cash, principal). Failures leave state untouched.
+    if (path === '/api/v1/finance/repay') {
+      if (method !== 'POST') {
+        const err = httpError(405, 'METHOD_NOT_ALLOWED', 'method not allowed on this route')
+        respond(err.status, err.body)
+        return true
+      }
+      const body = await readJson(req)
+      const amount = body.amount
+      if (state.status === 'game_over') {
+        const err = httpError(409, 'GAME_OVER', 'The game has ended.')
+        respond(err.status, err.body)
+        return true
+      }
+      for (const key of Object.keys(body)) {
+        if (key !== 'amount') {
+          const err = httpError(400, 'INVALID_REQUEST', 'unknown or unexpected field in request', { field: key })
+          respond(err.status, err.body)
+          return true
+        }
+      }
+      if (typeof amount !== 'number' || !Number.isInteger(amount)) {
+        const err = httpError(400, 'INVALID_REQUEST', "field 'amount' must be an integer", { field: 'amount' })
+        respond(err.status, err.body)
+        return true
+      }
+      if (amount <= 0) {
+        const err = httpError(400, 'INVALID_REQUEST', 'repayment amount must be a positive integer', {
+          field: 'amount',
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const available = Math.min(state.cash, state.loanPrincipal)
+      if (amount > available) {
+        const err = httpError(409, 'INSUFFICIENT_FUNDS', 'repayment exceeds cash or loan principal', {
+          required: amount,
+          available,
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const now = simulate(state)
+      state.loanPrincipal -= amount
+      addTxn(state, 'loan_repayment', -amount, 'Voluntary loan repayment', 'loan-1', now)
+      respond(200, {
+        player: { id: 'player-1', cash: state.cash, trait: state.trait, loan_principal: state.loanPrincipal },
+        repaid_amount: amount,
+      })
+      return true
+    }
 
     if (method === 'POST' && path === '/api/v1/debug/reset') {
       await readJson(req)

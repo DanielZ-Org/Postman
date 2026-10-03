@@ -792,7 +792,7 @@ Initial:
 - interest: **5% every four game weeks**
 - initial four-week interest on £1,000: **£50**
 
-The loan schedule stays **interest-only**: 5% of principal every four weeks; principal never decreases on its own (§16.9). Voluntary lump-sum repayment is implemented (M3, §16.9): `POST /api/v1/finance/repay` accepts a JSON body `{"amount": <pence>}` with `0 < amount ≤ min(cash, principal)`; it reduces the principal, posts a `loan_repayment` transaction for the paid amount, and the next 5% interest charge recalculates from the new principal. Invalid amounts return `INVALID_REQUEST` (400), unaffordable amounts `INSUFFICIENT_FUNDS` (409); state unchanged in both cases.
+The loan schedule stays **interest-only**: 5% of principal every four weeks; principal never decreases on its own (§16.9). Voluntary lump-sum repayment is implemented (M3, §16.9): `POST /api/v1/finance/repay` accepts a JSON body `{"amount": <pence>}` with `0 < amount ≤ min(cash, principal)`; it reduces the principal, posts a `loan_repayment` transaction for the paid amount, and the next 5% interest charge recalculates from the new principal. Invalid amounts return `INVALID_REQUEST` (400), unaffordable amounts `INSUFFICIENT_FUNDS` (409); state unchanged in both cases. In the weekly statement the payment books under **Other** expenses so `net_change` stays equal to the cash movement.
 
 ## 11.2 Scheduled costs
 

@@ -371,4 +371,14 @@ describe('mutation bodies', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(JSON.parse(String(init.body))).toEqual({ office_id: 'large' })
   })
+
+  it('POST /finance/repay sends amount in pence', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { repaid_amount: 25000 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.repayLoan(25000)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/finance/repay')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ amount: 25000 })
+  })
 })

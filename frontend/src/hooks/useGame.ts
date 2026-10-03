@@ -188,6 +188,11 @@ export function useGame() {
     [runMutation],
   )
 
+  const repayLoan = useCallback(
+    (amount: number) => runMutation(() => api.repayLoan(amount)),
+    [runMutation],
+  )
+
   const resetGame = useCallback(() => runMutation(() => api.resetGame()), [runMutation])
 
   useEffect(() => {
@@ -242,6 +247,7 @@ export function useGame() {
     selectOffice,
     hireEmployee,
     assignDelivery,
+    repayLoan,
     resetGame,
   }
 }

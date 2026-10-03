@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { GameApi } from '../hooks/useGame'
 import { formatGameDateTime, formatMoney } from '../lib/format'
 
@@ -6,6 +7,62 @@ function Row({ label, value, tone }: { label: string; value: number; tone?: 'pos
     <div className="finance-row">
       <span>{label}</span>
       <span className={`mono ${tone ? `is-${tone}` : ''}`}>{formatMoney(value)}</span>
+    </div>
+  )
+}
+
+// RepayForm drives POST /finance/repay (SPEC 11.1): integer pence with
+// 0 < amount <= min(cash, principal). The button stays disabled until the input is a
+// valid amount; a successful repayment refreshes every panel through the game hook.
+function RepayForm({ game }: { game: GameApi }) {
+  const [amountStr, setAmountStr] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const principal = game.finance?.liabilities.loan_principal ?? 0
+  const cash = game.state?.player.cash ?? 0
+  const available = Math.max(0, Math.min(cash, principal))
+  const amount = Number(amountStr)
+  const valid = amountStr !== '' && Number.isInteger(amount) && amount > 0 && amount <= available
+
+  if (principal <= 0) {
+    return <p className="empty-state">No outstanding loan.</p>
+  }
+
+  const handleRepay = () => {
+    if (!valid || submitting) return
+    setSubmitting(true)
+    void game
+      .repayLoan(amount)
+      .then((ok) => {
+        if (ok) setAmountStr('')
+      })
+      .finally(() => setSubmitting(false))
+  }
+
+  return (
+    <div className="assign-form">
+      <label className="field">
+        <span className="field-label">
+          Amount
+          <span className="field-hint">integer pence, up to {formatMoney(available)} available</span>
+        </span>
+        <input
+          type="number"
+          min={1}
+          max={available}
+          value={amountStr}
+          onChange={(event) => setAmountStr(event.target.value)}
+          aria-label="Repayment amount in pence"
+        />
+      </label>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={handleRepay}
+        disabled={!valid || submitting}
+      >
+        {submitting ? 'Repaying.' : 'Repay loan'}
+      </button>
     </div>
   )
 }
@@ -54,6 +111,10 @@ export function FinancePanel({ game }: { game: GameApi }) {
               <Row label="Accrued employee wages" value={finance.liabilities.accrued_employee_wages} />
               <Row label="Next rent amount" value={finance.liabilities.next_rent_amount} />
               <Row label="Next interest estimate" value={finance.liabilities.next_interest_estimate} />
+            </div>
+            <div className="finance-block">
+              <h3>Repay loan</h3>
+              <RepayForm game={game} />
             </div>
           </>
         )}

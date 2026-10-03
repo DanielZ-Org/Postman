@@ -585,6 +585,12 @@ export const api = {
     }
   },
 
+  // repayLoan posts one voluntary loan repayment in integer pence (SPEC 11.1). The
+  // response carries the updated player projection, but callers refresh from GET /game.
+  repayLoan(amount: number): Promise<unknown> {
+    return request<unknown>('/finance/repay', { method: 'POST', body: JSON.stringify({ amount }) })
+  },
+
   resetGame(): Promise<unknown> {
     return request<unknown>('/debug/reset', { method: 'POST', body: JSON.stringify({}) })
   },

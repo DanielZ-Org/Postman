@@ -160,6 +160,79 @@ func (h *financeHandler) handleTransactions(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, transactionsResponse{Transactions: txns})
 }
 
+// repayResponse is the successful repayment payload: the updated player projection and
+// the repaid amount in pence.
+type repayResponse struct {
+	Player       game.PlayerView `json:"player"`
+	RepaidAmount int             `json:"repaid_amount"`
+}
+
+// handleRepay serves POST /api/v1/finance/repay with a strict {"amount": <pence>}
+// body (SPEC 11.1, decided 16.9/16.17). Business rules live in the game layer.
+func (h *financeHandler) handleRepay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	body, code := readBody(r, false) // JSON required
+	if code != "" {
+		writeAPIError(w, http.StatusBadRequest, code, "request body must be a single valid JSON value", nil)
+		return
+	}
+	obj, ok := decodeObject(body)
+	if !ok {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST",
+			"request body must be a JSON object with the 'amount' field", nil)
+		return
+	}
+	for k := range obj {
+		if k != "amount" {
+			writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "unknown or unexpected field in request",
+				map[string]any{"field": k})
+			return
+		}
+	}
+	raw, present := obj["amount"]
+	if !present {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "missing required field 'amount'",
+			map[string]any{"field": "amount"})
+		return
+	}
+	amount, err := parseJSONInt(raw)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "field 'amount' must be an integer",
+			map[string]any{"field": "amount"})
+		return
+	}
+
+	player, err := h.state.RepayLoan(amount)
+	if err != nil {
+		h.writeRepayError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, repayResponse{Player: player, RepaidAmount: amount})
+}
+
+// writeRepayError maps repayment failures to canonical codes (SPEC 11.1/14.1).
+func (h *financeHandler) writeRepayError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, game.ErrGameOver):
+		writeAPIError(w, http.StatusConflict, "GAME_OVER", "the game has ended", nil)
+	case errors.Is(err, game.ErrInvalidRepayment):
+		writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "repayment amount must be a positive integer",
+			map[string]any{"field": "amount"})
+	default:
+		var ife *game.InsufficientFundsError
+		if errors.As(err, &ife) {
+			writeAPIError(w, http.StatusConflict, "INSUFFICIENT_FUNDS", "repayment exceeds cash or loan principal",
+				map[string]any{"required": ife.Required, "available": ife.Available})
+			return
+		}
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected repayment failure", nil)
+	}
+}
+
 // parseJSONInt parses a JSON integer literal into an int, rejecting fractional,
 // exponent or non-numeric values.
 func parseJSONInt(raw json.RawMessage) (int, error) {

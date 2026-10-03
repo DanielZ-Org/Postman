@@ -251,6 +251,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
     selectOffice: mockFn<GameApi['selectOffice']>(true),
     hireEmployee: mockFn<GameApi['hireEmployee']>(true),
     assignDelivery: mockFn<GameApi['assignDelivery']>(true),
+    repayLoan: mockFn<GameApi['repayLoan']>(true),
     resetGame: mockFn<GameApi['resetGame']>(true),
     ...overrides,
   }

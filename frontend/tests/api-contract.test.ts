@@ -411,6 +411,70 @@ describe('GET /finance', () => {
   })
 })
 
+describe('POST /finance/repay', () => {
+  it('repays and returns the updated player projection', async () => {
+    const res = await post('/finance/repay', { amount: 20000 })
+    expect(res.status).toBe(200)
+    const body = (await readJson(res)) as Record<string, unknown>
+    expect(body.repaid_amount).toBe(20000)
+    const player = body.player as Record<string, unknown>
+    expect(player.cash).toBe(80000) // 100000 - 20000 pence
+    expect(player.loan_principal).toBe(80000)
+
+    // The repayment shows up in the statement liabilities and transaction history.
+    const finance = (await readJson(await apiFetch('/finance'))) as Record<string, unknown>
+    const liabilities = finance.liabilities as Record<string, unknown>
+    expect(liabilities.loan_principal).toBe(80000)
+    const txns = (await readJson(await apiFetch('/finance/transactions'))) as {
+      transactions: Record<string, unknown>[]
+    }
+    const repayment = txns.transactions.find((t) => t.category === 'loan_repayment')
+    expect(repayment?.amount).toBe(-20000)
+    expect(repayment?.reference_id).toBe('loan-1')
+  })
+
+  it('rejects invalid amounts with 400 INVALID_REQUEST', async () => {
+    for (const amount of [0, -1, 1.5, '20000']) {
+      const res = await post('/finance/repay', { amount })
+      expect(res.status, `amount=${JSON.stringify(amount)}`).toBe(400)
+      const body = (await readJson(res)) as ErrorBody
+      expect(body.error?.code).toBe('INVALID_REQUEST')
+    }
+    const missing = await post('/finance/repay', {})
+    expect(missing.status).toBe(400)
+    expect(((await readJson(missing)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
+
+    const extra = await post('/finance/repay', { amount: 100, note: 'x' })
+    expect(extra.status).toBe(400)
+    expect(((await readJson(extra)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
+  })
+
+  it('rejects amounts above min(cash, principal) with 409 INSUFFICIENT_FUNDS', async () => {
+    const res = await post('/finance/repay', { amount: 200000 })
+    expect(res.status).toBe(409)
+    const errObj = ((await readJson(res)) as ErrorBody).error as
+      | { code?: string; details?: Record<string, number> }
+      | undefined
+    expect(errObj?.code).toBe('INSUFFICIENT_FUNDS')
+    expect(errObj?.details?.required).toBe(200000)
+    expect(errObj?.details?.available).toBe(100000)
+  })
+
+  it('rejects GET with 405', async () => {
+    const res = await apiFetch('/finance/repay')
+    expect(res.status).toBe(405)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('METHOD_NOT_ALLOWED')
+  })
+
+  it('leaves state unchanged after a failed repayment', async () => {
+    await post('/finance/repay', { amount: 200000 })
+    const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
+    expect((game.player as Record<string, unknown>).cash).toBe(100000)
+    const finance = (await readJson(await apiFetch('/finance'))) as Record<string, unknown>
+    expect((finance.liabilities as Record<string, unknown>).loan_principal).toBe(100000)
+  })
+})
+
 describe('clock controls', () => {
   it('accepts speeds 1, 2, 3 and rejects others', async () => {
     for (const speed of [1, 2, 3]) {
