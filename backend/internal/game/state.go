@@ -317,6 +317,8 @@ type GameState struct {
 	deliveredTodayKey string
 	dailyRevenue      int // revenue accrued on dailyRevenueKey; settled at day rollover
 	dailyRevenueKey   string
+
+	lastMaintenanceKey string // dayKey of the last Friday vehicle-maintenance charge (SPEC 12)
 }
 
 // NewInitialState returns the default game state seeded from the canonical start

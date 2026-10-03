@@ -18,32 +18,33 @@ type Store interface {
 // counters the simulation resumes from. Save/load preserves game time exactly; no
 // offline catch-up occurs (SPEC 2.3).
 type Snapshot struct {
-	Version           int            `json:"version"`
-	GameTime          string         `json:"game_time"`
-	Speed             int            `json:"speed"`
-	Paused            bool           `json:"paused"`
-	Status            string         `json:"status"`
-	Player            Player         `json:"player"`
-	TraitSelected     bool           `json:"trait_selected"`
-	Cash              int            `json:"cash"`
-	Office            *RuntimeOffice `json:"office"`
-	Packages          []*Package     `json:"packages"`
-	Employees         []*Employee    `json:"employees"`
-	Runs              []SnapshotRun  `json:"runs"`
-	Transactions      []Transaction  `json:"transactions"`
-	NextTxnID         int            `json:"next_txn_id"`
-	NextPkgSeq        int            `json:"next_pkg_seq"`
-	NextEmpSeq        int            `json:"next_emp_seq"`
-	TotalHires        int            `json:"total_hires"`
-	BicyclesOwned     int            `json:"bicycles_owned"`
-	CarsOwned         int            `json:"cars_owned"`
-	LastGeneration    string         `json:"last_generation"`
-	InterestDue       string         `json:"interest_due"`
-	PayrollDue        string         `json:"payroll_due"`
-	DeliveredToday    int            `json:"delivered_today"`
-	DeliveredTodayKey string         `json:"delivered_today_key"`
-	DailyRevenue      int            `json:"daily_revenue"`
-	DailyRevenueKey   string         `json:"daily_revenue_key"`
+	Version            int            `json:"version"`
+	GameTime           string         `json:"game_time"`
+	Speed              int            `json:"speed"`
+	Paused             bool           `json:"paused"`
+	Status             string         `json:"status"`
+	Player             Player         `json:"player"`
+	TraitSelected      bool           `json:"trait_selected"`
+	Cash               int            `json:"cash"`
+	Office             *RuntimeOffice `json:"office"`
+	Packages           []*Package     `json:"packages"`
+	Employees          []*Employee    `json:"employees"`
+	Runs               []SnapshotRun  `json:"runs"`
+	Transactions       []Transaction  `json:"transactions"`
+	NextTxnID          int            `json:"next_txn_id"`
+	NextPkgSeq         int            `json:"next_pkg_seq"`
+	NextEmpSeq         int            `json:"next_emp_seq"`
+	TotalHires         int            `json:"total_hires"`
+	BicyclesOwned      int            `json:"bicycles_owned"`
+	CarsOwned          int            `json:"cars_owned"`
+	LastGeneration     string         `json:"last_generation"`
+	InterestDue        string         `json:"interest_due"`
+	PayrollDue         string         `json:"payroll_due"`
+	DeliveredToday     int            `json:"delivered_today"`
+	DeliveredTodayKey  string         `json:"delivered_today_key"`
+	DailyRevenue       int            `json:"daily_revenue"`
+	DailyRevenueKey    string         `json:"daily_revenue_key"`
+	LastMaintenanceKey string         `json:"last_maintenance_key"`
 }
 
 // SnapshotRun is a persisted delivery run; PhaseEnd is stored in canonical game-time
@@ -70,28 +71,29 @@ func (s *GameState) Snapshot() *Snapshot {
 
 	now, speed, paused := s.Clock.parts()
 	snap := &Snapshot{
-		Version:           snapshotVersion,
-		GameTime:          now.Format(GameTimeFormat),
-		Speed:             speed,
-		Paused:            paused,
-		Status:            s.status,
-		Player:            s.player,
-		TraitSelected:     s.traitSelected,
-		Cash:              s.cash,
-		Transactions:      append([]Transaction(nil), s.transactions...),
-		NextTxnID:         s.nextTxnID,
-		NextPkgSeq:        s.nextPkgSeq,
-		NextEmpSeq:        s.nextEmpSeq,
-		TotalHires:        s.totalHires,
-		BicyclesOwned:     s.bicyclesOwned,
-		CarsOwned:         s.carsOwned,
-		LastGeneration:    s.lastGeneration.Format(GameTimeFormat),
-		InterestDue:       s.interestDue.Format(GameTimeFormat),
-		PayrollDue:        s.payrollDue.Format(GameTimeFormat),
-		DeliveredToday:    s.deliveredToday,
-		DeliveredTodayKey: s.deliveredTodayKey,
-		DailyRevenue:      s.dailyRevenue,
-		DailyRevenueKey:   s.dailyRevenueKey,
+		Version:            snapshotVersion,
+		GameTime:           now.Format(GameTimeFormat),
+		Speed:              speed,
+		Paused:             paused,
+		Status:             s.status,
+		Player:             s.player,
+		TraitSelected:      s.traitSelected,
+		Cash:               s.cash,
+		Transactions:       append([]Transaction(nil), s.transactions...),
+		NextTxnID:          s.nextTxnID,
+		NextPkgSeq:         s.nextPkgSeq,
+		NextEmpSeq:         s.nextEmpSeq,
+		TotalHires:         s.totalHires,
+		BicyclesOwned:      s.bicyclesOwned,
+		CarsOwned:          s.carsOwned,
+		LastGeneration:     s.lastGeneration.Format(GameTimeFormat),
+		InterestDue:        s.interestDue.Format(GameTimeFormat),
+		PayrollDue:         s.payrollDue.Format(GameTimeFormat),
+		DeliveredToday:     s.deliveredToday,
+		DeliveredTodayKey:  s.deliveredTodayKey,
+		DailyRevenue:       s.dailyRevenue,
+		DailyRevenueKey:    s.dailyRevenueKey,
+		LastMaintenanceKey: s.lastMaintenanceKey,
 	}
 	if s.selectedOffice != nil {
 		office := *s.selectedOffice
@@ -212,6 +214,9 @@ func (s *GameState) Restore(snap *Snapshot) error {
 	s.deliveredTodayKey = snap.DeliveredTodayKey
 	s.dailyRevenue = snap.DailyRevenue
 	s.dailyRevenueKey = snap.DailyRevenueKey
+	// Saves written before vehicle maintenance existed lack the field; the empty zero
+	// value means "no Friday charged yet", which is correct (the next Friday charges).
+	s.lastMaintenanceKey = snap.LastMaintenanceKey
 	return nil
 }
 

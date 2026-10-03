@@ -40,6 +40,8 @@ export function FinancePanel({ game }: { game: GameApi }) {
               <Row label="Rent" value={finance.expenses.rent} />
               <Row label="Loan interest" value={finance.expenses.loan_interest} />
               <Row label="Hiring" value={finance.expenses.hiring} />
+              <Row label="Vehicle fuel" value={finance.expenses.vehicle_fuel} />
+              <Row label="Vehicle maintenance" value={finance.expenses.vehicle_maintenance} />
               <Row label="Other" value={finance.expenses.other} />
               <Row label="Total expenses" value={finance.expenses.total} />
             </div>

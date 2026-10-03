@@ -192,10 +192,15 @@ const (
 )
 
 // Vehicle purchase prices (SPEC 12, decided 16.7): £50 per bicycle, £500 per car,
-// integer pence. Operating/fuel/maintenance costs are M3 scope.
+// integer pence. Running costs (decided 16.7, M3): fuel 150p per completed car run;
+// maintenance every Friday per owned vehicle, 100p per bicycle and 500p per car.
 const (
 	bicyclePurchasePrice = 5000  // £50
 	carPurchasePrice     = 50000 // £500
+
+	carFuelPerRun            = 150 // £1.50 per completed car run; bicycle and foot cost no fuel
+	bicycleMaintenanceWeekly = 100 // £1 per owned bicycle, charged every Friday
+	carMaintenanceWeekly     = 500 // £5 per owned car, charged every Friday
 )
 
 // Hire-time skill distribution (SPEC 7.2): the player may hire employees who already

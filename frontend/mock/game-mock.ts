@@ -633,6 +633,8 @@ function financeResponse(state: MockState, nowMs: number) {
   let rent = 0
   let interest = 0
   let hiring = 0
+  let vehicleFuel = 0
+  let vehicleMaintenance = 0
   let other = 0
 
   for (const t of inPeriod) {
@@ -647,12 +649,14 @@ function financeResponse(state: MockState, nowMs: number) {
     else if (t.category === 'rent') rent += abs
     else if (t.category === 'loan_interest') interest += abs
     else if (t.category === 'hiring_bonus') hiring += abs
+    else if (t.category === 'vehicle_fuel') vehicleFuel += abs
+    else if (t.category === 'vehicle_maintenance') vehicleMaintenance += abs
     else other += abs
   }
 
   // All monetary values are integer pence (SPEC 4.3); sums stay exact.
   const incomeTotal = packageRevenue + traitBonus
-  const expenseTotal = wages + rent + interest + hiring + other
+  const expenseTotal = wages + rent + interest + hiring + vehicleFuel + vehicleMaintenance + other
   const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
   const active = state.office && state.office.contract_status === 'active' ? state.office : null
 
@@ -665,6 +669,8 @@ function financeResponse(state: MockState, nowMs: number) {
       rent: rent,
       loan_interest: interest,
       hiring: hiring,
+      vehicle_fuel: vehicleFuel,
+      vehicle_maintenance: vehicleMaintenance,
       other: other,
       total: expenseTotal,
     },

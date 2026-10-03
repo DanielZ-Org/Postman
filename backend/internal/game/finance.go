@@ -17,16 +17,18 @@ type Transaction struct {
 
 // Finance categories (SPEC 11.3).
 const (
-	CategoryLoanDisbursement  = "loan_disbursement"
-	CategoryPackageRevenue    = "package_revenue"
-	CategoryTraitBonus        = "financial_trait_bonus"
-	CategoryOfficeDownPayment = "office_down_payment"
-	CategoryRent              = "rent"
-	CategoryRentLateFee       = "rent_late_fee"
-	CategoryHiringBonus       = "hiring_bonus"
-	CategoryEmployeeWages     = "employee_wages"
-	CategoryLoanInterest      = "loan_interest"
-	CategoryVehiclePurchase   = "vehicle_purchase"
+	CategoryLoanDisbursement   = "loan_disbursement"
+	CategoryPackageRevenue     = "package_revenue"
+	CategoryTraitBonus         = "financial_trait_bonus"
+	CategoryOfficeDownPayment  = "office_down_payment"
+	CategoryRent               = "rent"
+	CategoryRentLateFee        = "rent_late_fee"
+	CategoryHiringBonus        = "hiring_bonus"
+	CategoryEmployeeWages      = "employee_wages"
+	CategoryLoanInterest       = "loan_interest"
+	CategoryVehiclePurchase    = "vehicle_purchase"
+	CategoryVehicleFuel        = "vehicle_fuel"
+	CategoryVehicleMaintenance = "vehicle_maintenance"
 )
 
 // postTransactionLocked applies a money mutation: adjusts cash by amount and appends
@@ -119,12 +121,14 @@ type FinanceIncome struct {
 
 // FinanceExpense aggregates expense categories for the period (SPEC 11.3).
 type FinanceExpense struct {
-	EmployeeWages int `json:"employee_wages"`
-	Rent          int `json:"rent"`
-	LoanInterest  int `json:"loan_interest"`
-	Hiring        int `json:"hiring"`
-	Other         int `json:"other"`
-	Total         int `json:"total"`
+	EmployeeWages      int `json:"employee_wages"`
+	Rent               int `json:"rent"`
+	LoanInterest       int `json:"loan_interest"`
+	Hiring             int `json:"hiring"`
+	VehicleFuel        int `json:"vehicle_fuel"`
+	VehicleMaintenance int `json:"vehicle_maintenance"`
+	Other              int `json:"other"`
+	Total              int `json:"total"`
 }
 
 // FinanceLiabs lists outstanding obligations (SPEC 11.3). NextInterestEstimate is 5%
@@ -174,13 +178,18 @@ func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
 				exp.LoanInterest += abs
 			case CategoryHiringBonus:
 				exp.Hiring += abs
+			case CategoryVehicleFuel:
+				exp.VehicleFuel += abs
+			case CategoryVehicleMaintenance:
+				exp.VehicleMaintenance += abs
 			default:
 				exp.Other += abs
 			}
 		}
 	}
 	inc.Total = inc.PackageRevenue + inc.TraitBonus
-	exp.Total = exp.EmployeeWages + exp.Rent + exp.LoanInterest + exp.Hiring + exp.Other
+	exp.Total = exp.EmployeeWages + exp.Rent + exp.LoanInterest + exp.Hiring +
+		exp.VehicleFuel + exp.VehicleMaintenance + exp.Other
 
 	var accruedWages int
 	for _, e := range s.employees {

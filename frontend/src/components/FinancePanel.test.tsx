@@ -12,8 +12,17 @@ describe('FinancePanel', () => {
           finance: makeFinance({
             cash_balance: 65000,
             income: { package_revenue: 12000, trait_bonus: 1200, total: 13200 },
-            expenses: { employee_wages: 4000, rent: 5000, loan_interest: 0, hiring: 10000, other: 0, total: 19000 },
-            net_change: -5800,
+            expenses: {
+              employee_wages: 4000,
+              rent: 5000,
+              loan_interest: 0,
+              hiring: 10000,
+              vehicle_fuel: 150,
+              vehicle_maintenance: 600,
+              other: 0,
+              total: 19750,
+            },
+            net_change: -6550,
           }),
         })}
       />,
@@ -25,6 +34,10 @@ describe('FinancePanel', () => {
     expect(screen.getByText('Trait bonus')).toBeInTheDocument()
     expect(screen.getByText('£12.00')).toBeInTheDocument()
     expect(screen.getByText('Employee wages')).toBeInTheDocument()
+    expect(screen.getByText('Vehicle fuel')).toBeInTheDocument()
+    expect(screen.getByText('Vehicle maintenance')).toBeInTheDocument()
+    expect(screen.getByText('£1.50')).toBeInTheDocument() // fuel row (150p)
+    expect(screen.getByText('£6.00')).toBeInTheDocument() // maintenance row (600p)
     expect(screen.getByText('Net change')).toBeInTheDocument()
     expect(screen.getByText('Loan principal')).toBeInTheDocument()
     expect(screen.getByText('Cash balance')).toBeInTheDocument()

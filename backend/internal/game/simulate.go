@@ -54,6 +54,7 @@ func (s *GameState) processLocked(now time.Time) bool {
 	changed = s.processRunsLocked(now) || changed
 	changed = s.processPayrollLocked(now) || changed
 	changed = s.processRentLocked(now) || changed
+	changed = s.processVehicleMaintenanceLocked(now) || changed
 	changed = s.processInterestLocked(now) || changed
 	changed = s.generatePackagesLocked(now) || changed
 	changed = s.checkGameOverLocked(now) || changed
@@ -218,6 +219,11 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 			// employee to be ready), so the completion-time mode is the assignment mode.
 			emp.AccruedWages += delivered * wagePerPackageFor(emp.CurrentDeliveryMode)
 		}
+		if emp.CurrentDeliveryMode == ModeCar {
+			// Fuel: 150p per completed car run, charged whenever the out-phase ends
+			// (SPEC 12, decided SPEC 16.7).
+			s.postTransactionLocked(at, CategoryVehicleFuel, -carFuelPerRun, "Car run fuel", run.EmployeeID)
+		}
 		emp.Status = EmployeeReady
 	}
 	if dayKey(at) == s.deliveredTodayKey {
@@ -290,6 +296,30 @@ func (s *GameState) processRentLocked(now time.Time) bool {
 		changed = true
 	}
 	return changed
+}
+
+// processVehicleMaintenanceLocked charges weekly vehicle maintenance (SPEC 12;
+// decided SPEC 16.7): every Friday, 100p per owned bicycle and 500p per owned car post
+// as one vehicle_maintenance transaction. The charge snaps to the most recent Friday at
+// or before now, so an interval skipped across Friday close (SPEC 14.4) still charges
+// exactly once per Friday; lastMaintenanceKey deduplicates. A Friday where no vehicle
+// is owned only marks the day (buying later that Friday defers upkeep to next week).
+// Calendar events are not gated by opening hours (same as rent and interest).
+func (s *GameState) processVehicleMaintenanceLocked(now time.Time) bool {
+	delta := (int(now.Weekday()) - int(time.Friday) + 7) % 7
+	friday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -delta)
+	key := dayKey(friday)
+	if s.lastMaintenanceKey == key {
+		return false
+	}
+	s.lastMaintenanceKey = key
+	total := s.bicyclesOwned*bicycleMaintenanceWeekly + s.carsOwned*carMaintenanceWeekly
+	if total == 0 {
+		return false
+	}
+	s.postTransactionLocked(friday, CategoryVehicleMaintenance, -total,
+		"Friday vehicle maintenance ("+itoa(s.bicyclesOwned)+" bicycle, "+itoa(s.carsOwned)+" car)", "vehicle-maintenance")
+	return true
 }
 
 // processInterestLocked charges due four-week loan interest (SPEC 11.1: 5% of

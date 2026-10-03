@@ -814,7 +814,10 @@ Recommended categories include:
 - `hiring_bonus`
 - `employee_wages`
 - `loan_interest`
-- future `vehicle_purchase`
+- `vehicle_purchase`
+- `vehicle_fuel`
+- `vehicle_maintenance`
+- `loan_repayment`
 - future `upgrade`
 
 ### Example finance statement
@@ -836,6 +839,8 @@ Recommended categories include:
     "rent": 0.0,
     "loan_interest": 0.0,
     "hiring": 50.0,
+    "vehicle_fuel": 0.0,
+    "vehicle_maintenance": 0.0,
     "other": 0.0,
     "total": 86.0
   },

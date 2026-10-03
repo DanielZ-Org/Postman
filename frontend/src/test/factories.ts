@@ -168,6 +168,8 @@ export function makeFinance(overrides: Partial<FinanceStatement> = {}): FinanceS
       rent: 0,
       loan_interest: 0,
       hiring: 0,
+      vehicle_fuel: 0,
+      vehicle_maintenance: 0,
       other: 0,
       total: 0,
     },

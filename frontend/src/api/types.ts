@@ -126,6 +126,8 @@ export interface FinanceStatement {
     rent: number
     loan_interest: number
     hiring: number
+    vehicle_fuel: number
+    vehicle_maintenance: number
     other: number
     total: number
   }

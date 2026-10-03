@@ -425,6 +425,8 @@ function parseFinance(payload: unknown): FinanceStatement {
       rent: requireNumber(expenses, 'rent', 'finance.expenses'),
       loan_interest: requireNumber(expenses, 'loan_interest', 'finance.expenses'),
       hiring: requireNumber(expenses, 'hiring', 'finance.expenses'),
+      vehicle_fuel: requireNumber(expenses, 'vehicle_fuel', 'finance.expenses'),
+      vehicle_maintenance: requireNumber(expenses, 'vehicle_maintenance', 'finance.expenses'),
       other: requireNumber(expenses, 'other', 'finance.expenses'),
       total: requireNumber(expenses, 'total', 'finance.expenses'),
     },
