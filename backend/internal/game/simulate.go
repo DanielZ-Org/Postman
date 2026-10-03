@@ -2,8 +2,9 @@ package game
 
 import "time"
 
-// Delivery-run phases (SPEC 9.1): packing (1 game hour) then out_for_delivery
-// (3 game hours), after which the employee returns to ready.
+// Delivery-run phases (SPEC 9.1): packing (1 game hour, all modes) then
+// out_for_delivery (mode- and trait-specific, decided 16.13), after which the
+// employee returns to ready.
 const (
 	RunPhasePacking        = "packing"
 	RunPhaseOutForDelivery = "out_for_delivery"
@@ -98,6 +99,17 @@ func (s *GameState) rolloverDayLocked(now time.Time) bool {
 	return changed
 }
 
+// runOutPhaseDuration returns the out-for-delivery step for an in-flight run: the
+// employee's locked mode and speed trait decide it (SPEC 9.1, decided 16.13/16.5).
+// If the employee cannot be found (defensive; attrition never removes a busy
+// employee), the legacy foot 3h step keeps the run moving.
+func (s *GameState) runOutPhaseDuration(employeeID string) time.Duration {
+	if emp := s.findEmployeeLocked(employeeID); emp != nil {
+		return time.Duration(outPhaseMinutes(emp.CurrentDeliveryMode, emp.SpeedTrait)) * time.Minute
+	}
+	return 3 * time.Hour
+}
+
 // processRunsLocked advances in-flight delivery runs. Each run that reached its
 // phase end either transitions packing -> out_for_delivery or completes: packages
 // deliver, revenue posts, wages accrue and the employee returns to ready. A long gap
@@ -113,7 +125,10 @@ func (s *GameState) processRunsLocked(now time.Time) bool {
 			switch run.Phase {
 			case RunPhasePacking:
 				run.Phase = RunPhaseOutForDelivery
-				run.PhaseEnd = run.PhaseEnd.Add(deliveryDuration)
+				// Mode and speed trait are locked while the run is in flight
+				// (SetEmployeeMode requires a ready employee), so the employee's
+				// current values are the assignment values (SPEC 9.1/16.5).
+				run.PhaseEnd = run.PhaseEnd.Add(s.runOutPhaseDuration(run.EmployeeID))
 				for _, id := range run.PackageIDs {
 					if p := s.findPackageLocked(id); p != nil && p.Status == PackageAssigned {
 						p.Status = PackageOutForDelivery

@@ -167,12 +167,13 @@ func TestAssignRunsPerDayLimit(t *testing.T) {
 	s := newAssignedOfficeState(t)
 	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T08:00:00"))
 
-	// Run 1: 09:00 -> pack 10:00 -> deliver 13:00.
+	// Run 1: 09:00 -> pack 10:00 -> deliver 13:45 (hire #1 is snail: 225-minute
+	// foot out-phase, SPEC 16.5).
 	if _, _, err := s.AssignDelivery("emp-0001", 1); err != nil {
 		t.Fatalf("run 1: %v", err)
 	}
 	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00"))
-	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00"))
+	s.processLocked(mustParseTime(t, "1980-02-01T13:45:00"))
 	if s.employees[0].Status != EmployeeReady {
 		t.Fatalf("employee status = %s, want ready", s.employees[0].Status)
 	}
@@ -595,6 +596,107 @@ func TestBicycleModeParameters(t *testing.T) {
 		t.Errorf("car runs per day = %d, want %d", got, carRunsPerDay)
 	}
 	if got := wagePerPackageFor(ModeCar); got != carWagePerPackage {
-		t.Errorf("car wage = %d, want %d", got, carWagePerPackage)
+		t.Errorf("car wage = %d, want %d (SPEC 10)", got, carWagePerPackage)
 	}
+}
+
+// TestRunPhaseTimingBicycle verifies the decided bicycle cycle (SPEC 9.1/16.13):
+// 1h packing from a 09:00 assignment, then a 90-minute out-phase (hire #2 is chicken,
+// 1.0x) completing at 11:30 — not at the old foot time of 13:00.
+func TestRunPhaseTimingBicycle(t *testing.T) {
+	s, bikeEmp := newBicycleModeState(t)
+	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	emp := s.findEmployeeLocked(bikeEmp)
+	if emp == nil || emp.Status != EmployeePacking {
+		t.Fatalf("status after assign = %v, want packing", emp)
+	}
+
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	if emp.Status != RunPhaseOutForDelivery {
+		t.Fatalf("status at 10:00 = %s, want out_for_delivery", emp.Status)
+	}
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T11:29:00")) // 1 min before out end
+	if emp.Status != RunPhaseOutForDelivery {
+		t.Fatalf("status at 11:29 = %s, want out_for_delivery (out ends 11:30)", emp.Status)
+	}
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T11:30:00")) // out ends (90 min)
+	if emp.Status != EmployeeReady {
+		t.Fatalf("status at 11:30 = %s, want ready", emp.Status)
+	}
+	if p := s.findPackageLocked("pkg-000001"); p == nil || p.Status != PackageDelivered {
+		t.Fatalf("package status = %v, want delivered at 11:30 (SPEC 9.1)", p)
+	}
+}
+
+// TestSpeedTraitChangesCompletionTime proves the snail speed trait measurably changes
+// completion time (SPEC 16.5): hire #1 is snail, so the foot out-phase is 225 minutes
+// (180 / 0.8) and the cycle completes at 13:45 instead of the chicken 13:00.
+func TestSpeedTraitChangesCompletionTime(t *testing.T) {
+	s := newAssignedOfficeState(t)
+	emp := s.findEmployeeLocked("emp-0001")
+	if emp == nil || emp.SpeedTrait != "snail" {
+		t.Fatalf("hire #1 speed trait = %v, want snail", emp)
+	}
+	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+
+	if _, _, err := s.AssignDelivery("emp-0001", 1); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T13:44:00")) // 1 min before snail out end
+	if emp.Status != RunPhaseOutForDelivery {
+		t.Fatalf("status at 13:44 = %s, want out_for_delivery (snail out ends 13:45)", emp.Status)
+	}
+	s.processRunsLocked(mustParseTime(t, "1980-02-01T13:45:00")) // 10:00 + 225 min
+	if emp.Status != EmployeeReady {
+		t.Fatalf("status at 13:45 = %s, want ready", emp.Status)
+	}
+	if p := s.findPackageLocked("pkg-000001"); p == nil || p.Status != PackageDelivered {
+		t.Fatalf("package status = %v, want delivered at 13:45 (SPEC 16.5)", p)
+	}
+}
+
+// TestCycleClosingValidationPerMode verifies the closing-time check uses the
+// mode-specific cycle (SPEC 9.1): bicycle 150 min (chicken) fits exactly when started
+// at 14:30 but not at 14:31; car 110 min (cheetah) fits at 15:10 but not at 15:11.
+func TestCycleClosingValidationPerMode(t *testing.T) {
+	t.Run("bicycle boundary", func(t *testing.T) {
+		s, bikeEmp := newBicycleModeState(t)
+		addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+
+		s.Clock.restore(mustParseTime(t, "1980-02-01T14:31:00"), 1, false)
+		_, _, err := s.AssignDelivery(bikeEmp, 1)
+		var cycErr *CycleError
+		if !errors.As(err, &cycErr) {
+			t.Fatalf("14:31 assign err = %T (%v), want *CycleError", err, err)
+		}
+
+		s.Clock.restore(mustParseTime(t, "1980-02-01T14:30:00"), 1, false)
+		if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+			t.Fatalf("14:30 assign (ends exactly 17:00): %v", err)
+		}
+	})
+
+	t.Run("car boundary", func(t *testing.T) {
+		s, carEmp := newCarModeState(t)
+		addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T08:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+
+		s.Clock.restore(mustParseTime(t, "1980-02-01T15:11:00"), 1, false)
+		_, _, err := s.AssignDelivery(carEmp, 1)
+		var cycErr *CycleError
+		if !errors.As(err, &cycErr) {
+			t.Fatalf("15:11 assign err = %T (%v), want *CycleError", err, err)
+		}
+
+		// Hire #3 is cheetah: car cycle = 60 + 50 = 110 minutes (SPEC 9.1/16.5).
+		s.Clock.restore(mustParseTime(t, "1980-02-01T15:10:00"), 1, false)
+		if _, _, err := s.AssignDelivery(carEmp, 1); err != nil {
+			t.Fatalf("15:10 assign (ends exactly 17:00): %v", err)
+		}
+	})
 }

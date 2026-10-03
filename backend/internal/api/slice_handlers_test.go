@@ -533,9 +533,10 @@ func TestFullSliceSelectHireGenerateAssignDeliver(t *testing.T) {
 		t.Fatalf("assigned = %v, want 1", assigned)
 	}
 
-	// 5. Advance four game hours (120 real seconds at speed 1): packing ends 10:30,
-	//    delivery ends 13:30 -> package delivered, revenue posted, employee ready.
-	advanceGame(state, 120*time.Second)
+	// 5. Advance five game hours (150 real seconds at speed 1): packing ends 10:30,
+	//    the snail out-phase (225 min, SPEC 16.5) ends 14:15 -> package delivered,
+	//    revenue posted, employee ready.
+	advanceGame(state, 150*time.Second)
 
 	rec = doRequest(t, h, http.MethodGet, "/api/v1/packages", "")
 	pkgs = decodeJSON(t, rec.Body.Bytes())["packages"].([]any)

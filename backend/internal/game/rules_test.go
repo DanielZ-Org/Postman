@@ -25,6 +25,37 @@ func TestLogisticsCapacityRounding(t *testing.T) {
 	}
 }
 
+// TestDeliveryCycleDurationsPerMode pins the decided SPEC 9.1/16.13 table and the
+// SPEC 16.5 trait application: 1h packing for all modes; out-phase foot 180m,
+// bicycle 90m, car 60m base, divided by the speed modifier (snail 4/5, chicken 1/1,
+// cheetah 6/5) and rounded half away from zero. Bicycle + snail = 113 exercises the
+// half-minute rounding.
+func TestDeliveryCycleDurationsPerMode(t *testing.T) {
+	cases := []struct {
+		mode, trait string
+		wantOut     int // out-phase minutes, trait-adjusted
+		wantCycle   int // packing + out
+	}{
+		{ModeFoot, "snail", 225, 285},
+		{ModeFoot, "chicken", 180, 240},
+		{ModeFoot, "cheetah", 150, 210},
+		{ModeBicycle, "snail", 113, 173}, // 90 / 0.8 = 112.5 -> 113 (half away)
+		{ModeBicycle, "chicken", 90, 150},
+		{ModeBicycle, "cheetah", 75, 135},
+		{ModeCar, "snail", 75, 135},
+		{ModeCar, "chicken", 60, 120},
+		{ModeCar, "cheetah", 50, 110},
+	}
+	for _, c := range cases {
+		if got := outPhaseMinutes(c.mode, c.trait); got != c.wantOut {
+			t.Errorf("%s/%s out-phase = %d min, want %d (SPEC 9.1/16.5)", c.mode, c.trait, got, c.wantOut)
+		}
+		if got := cycleMinutes(c.mode, c.trait); got != c.wantCycle {
+			t.Errorf("%s/%s cycle = %d min, want %d (SPEC 9.1)", c.mode, c.trait, got, c.wantCycle)
+		}
+	}
+}
+
 // TestSmallSizeProbabilityThreshold pins the decided SPEC 16.1 generation split:
 // rolls 0..69 produce a small package and 70..99 a medium one (70/30).
 func TestSmallSizeProbabilityThreshold(t *testing.T) {

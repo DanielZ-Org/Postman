@@ -65,8 +65,8 @@ var speedTraits = []string{"snail", "chicken", "cheetah"}
 
 // newEmployee builds a ready-to-work employee for the given 1-based hire number.
 // Speed-trait modifiers are decided (SPEC 16.5): Snail 0.8x, Chicken 1.0x, Cheetah
-// 1.2x — inert until delivery-duration mechanics land (M3), so the trait is stored
-// only. Skills follow the deterministic hire-time distribution (SPEC 7.2, labelled
+// 1.2x — applied as speed multipliers on the out-for-delivery phase (SPEC 9.1).
+// Skills follow the deterministic hire-time distribution (SPEC 7.2, labelled
 // cycle in rules.go) so vehicle modes are reachable without a training system.
 func newEmployee(id string, hireNumber int) *Employee {
 	// A non-nil empty slice so the wire contract serialises skills as [] (never null).

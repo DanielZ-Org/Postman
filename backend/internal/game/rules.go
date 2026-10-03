@@ -31,15 +31,69 @@ const expressChancePercent = 3
 // packages generate (SPEC 6).
 const expressFreeDuration = 28 * 24 * time.Hour
 
-// Delivery-run geometry (SPEC 9.1): a walking cycle is 1 game hour of packing followed
-// by 3 game hours out for delivery. Bicycle and car reuse this same geometry as a
-// labelled temporary assumption until SPEC defines per-mode timing (SPEC 9.1: bicycle
-// and car timing "can be defined separately later without changing this model").
-const (
-	packingDuration    = time.Hour
-	deliveryDuration   = 3 * time.Hour
-	assignmentDuration = packingDuration + deliveryDuration
-)
+// Delivery-run geometry (SPEC 9.1, decided 16.13): every mode packs for 1 game hour,
+// then is out for delivery for a mode-specific base duration — foot 3h (180m),
+// bicycle 1.5h (90m), car 1h (60m) — which matches the runs-per-day budgets of
+// SPEC 9.3 (foot 2×4h, bicycle 3×2.5h, car 2×2h within the weekday).
+const packingDuration = time.Hour
+
+// outPhaseBaseMinutes returns the mode's base out-for-delivery duration in whole game
+// minutes (SPEC 9.1 table).
+func outPhaseBaseMinutes(mode string) int {
+	switch mode {
+	case ModeBicycle:
+		return 90
+	case ModeCar:
+		return 60
+	default: // foot
+		return 180
+	}
+}
+
+// speedTraitRatio returns the speed-trait multiplier as an exact rational num/den
+// (SPEC 16.5): snail 0.8 = 4/5, chicken 1.0, cheetah 1.2 = 6/5. Integer arithmetic
+// keeps durations exact — no floating point anywhere in the timing path.
+func speedTraitRatio(trait string) (num, den int) {
+	switch trait {
+	case "snail":
+		return 4, 5
+	case "cheetah":
+		return 6, 5
+	default: // chicken or unknown
+		return 1, 1
+	}
+}
+
+// roundHalfAwayDiv rounds n/d half away from zero with integer math, matching the
+// SPEC 4.3 percentage rule.
+func roundHalfAwayDiv(n, d int) int {
+	if d < 0 {
+		n, d = -n, -d
+	}
+	if n >= 0 {
+		return (n + d/2) / d
+	}
+	return (n - d/2) / d
+}
+
+// outPhaseMinutes returns the trait-adjusted out-for-delivery duration in whole game
+// minutes: base ÷ speed modifier, rounded half away from zero (SPEC 9.1/16.5). Snail
+// lengthens the phase (bicycle 90 → 113), Cheetah shortens it (bicycle 90 → 75).
+func outPhaseMinutes(mode, trait string) int {
+	num, den := speedTraitRatio(trait)
+	return roundHalfAwayDiv(outPhaseBaseMinutes(mode)*den, num)
+}
+
+// cycleMinutes is packing plus the trait-adjusted out phase (SPEC 9.1).
+func cycleMinutes(mode, trait string) int {
+	return 60 + outPhaseMinutes(mode, trait)
+}
+
+// cycleDuration is the full cycle length used by the closing-time validation when a
+// batch is assigned (SPEC 9.1).
+func cycleDuration(mode, trait string) time.Duration {
+	return time.Duration(cycleMinutes(mode, trait)) * time.Minute
+}
 
 // Delivery capacities per mode (SPEC 9.2): foot 10, bicycle 20, car 50 units per run.
 // Normal packages consume 1 unit, express 2 — the same consumption in every mode.

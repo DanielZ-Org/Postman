@@ -103,7 +103,7 @@ func (s *GameState) hiringStateLocked() HiringState {
 // game over; employee exists (EMPLOYEE_NOT_FOUND); employee ready (EMPLOYEE_BUSY);
 // stored inventory (NO_STORED_PACKAGES); batch fits capacity
 // (INSUFFICIENT_DELIVERY_CAPACITY); daily run budget (RUNS_LIMIT_REACHED);
-// full 4-hour cycle finishes before closing (CYCLE_WOULD_NOT_FINISH).
+// the mode-specific full cycle finishes before closing (CYCLE_WOULD_NOT_FINISH).
 //
 // On success the batch moves to assigned, the employee enters packing and a Run is
 // appended; every package is chosen atomically so state never half-commits.
@@ -167,9 +167,10 @@ func (s *GameState) AssignDelivery(employeeID string, count int) (*Employee, []s
 		return nil, nil, ErrRunsLimitReached
 	}
 
-	// A full walking cycle must finish before today's closing (SPEC 9.1).
+	// A full cycle must finish before today's closing, using this employee's mode and
+	// speed trait (SPEC 9.1, decided 16.13).
 	closeAt, hasClosing := closingInstantToday(now)
-	if !hasClosing || now.Add(assignmentDuration).After(closeAt) {
+	if !hasClosing || now.Add(cycleDuration(emp.CurrentDeliveryMode, emp.SpeedTrait)).After(closeAt) {
 		closing := ""
 		if hasClosing {
 			closing = closeAt.Format(GameTimeFormat)
