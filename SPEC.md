@@ -168,7 +168,8 @@ An internal event architecture may be added later; an external event API is not 
   "paused": false,
   "office_open": true,
   "days_until_next_payroll": 4,
-  "days_until_next_rent": 0
+  "days_until_next_rent": 0,
+  "days_until_next_interest": 28
 }
 ```
 
@@ -820,6 +821,8 @@ Recommended categories include:
 - `loan_repayment`
 - `upgrade`
 
+The statement also carries `previous_period`: the identical `from`/`to`, `income`, `expenses` and `net_change` breakdown for the immediately preceding 7-day window on the same weekly grid, so the finance UI can render a week-over-week comparison without re-aggregating transactions client-side. Before the canonical start (§2.1) that window is a zero-activity window with real boundaries, not an absent section.
+
 ### Example finance statement
 
 ```json
@@ -850,6 +853,26 @@ Recommended categories include:
     "accrued_employee_wages": 0.0,
     "next_rent_amount": 50.0,
     "next_interest_estimate": 50.0
+  },
+  "previous_period": {
+    "from": "1980-01-25T00:00:00",
+    "to": "1980-01-31T23:59:59",
+    "income": {
+      "package_revenue": 0.0,
+      "trait_bonus": 0.0,
+      "total": 0.0
+    },
+    "expenses": {
+      "employee_wages": 0.0,
+      "rent": 0.0,
+      "loan_interest": 0.0,
+      "hiring": 0.0,
+      "vehicle_fuel": 0.0,
+      "vehicle_maintenance": 0.0,
+      "other": 0.0,
+      "total": 0.0
+    },
+    "net_change": 0.0
   }
 }
 ```
@@ -1030,7 +1053,8 @@ Invalid rule checks or state transitions should return machine-readable errors a
     "paused": false,
     "office_open": true,
     "days_until_next_payroll": 4,
-    "days_until_next_rent": 0
+    "days_until_next_rent": 0,
+    "days_until_next_interest": 28
   }
 }
 ```

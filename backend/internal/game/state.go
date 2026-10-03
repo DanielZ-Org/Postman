@@ -272,6 +272,28 @@ func daysUntilNext(t time.Time, target time.Weekday) int {
 	return (int(target) - int(t.Weekday()) + 7) % 7
 }
 
+// daysUntilDate returns the number of calendar days from t's date until target's date
+// (0 when both fall on the same day; negative when target has already passed, which the
+// interest scheduler prevents by advancing interestDue as it charges).
+func daysUntilDate(t, target time.Time) int {
+	ty, tm, td := t.Date()
+	ky, km, kd := target.Date()
+	from := time.Date(ty, tm, td, 0, 0, 0, 0, t.Location())
+	to := time.Date(ky, km, kd, 0, 0, 0, 0, t.Location())
+	return int(to.Sub(from) / (24 * time.Hour))
+}
+
+// DaysUntilNextInterest reports the calendar days from the current game date to the
+// next four-week loan-interest charge (0 when the charge lands today). The schedule
+// lives in game state rather than on the clock, so the API's clock wrapper gathers it
+// here for the finance reporting UI (issue #27). Lock ordering follows the standing
+// rule: s.mu may be held while reading the clock, never the reverse.
+func (s *GameState) DaysUntilNextInterest() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return daysUntilDate(s.Clock.Now(), s.interestDue)
+}
+
 // dayKey returns the calendar-date key ("2006-01-02") used to detect game-day
 // rollovers for daily counters.
 func dayKey(t time.Time) string {

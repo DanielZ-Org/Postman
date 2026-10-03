@@ -72,6 +72,9 @@ func TestPayrollMoodNegativeFloorsAtZero(t *testing.T) {
 	s.employees[0].Mood = 10
 	s.employees[0].AccruedWages = 100
 	s.cash = 50
+	// The floored mood (0) is at or below the quit threshold, so payroll rolls the
+	// retention die: pin a non-quitting roll or the employee would randomly vanish.
+	withDeterministicRand(t, func(int) int { return 99 })
 
 	s.processPayrollLocked(mustParseTime(t, "1980-02-05T09:00:00"))
 

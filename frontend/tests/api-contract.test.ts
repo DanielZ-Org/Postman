@@ -60,7 +60,7 @@ describe('mock API health', () => {
     expect(game.game_datetime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
-  it('GET /clock returns speed, pause, and payroll/rent countdowns', async () => {
+  it('GET /clock returns speed, pause, and payroll/rent/interest countdowns', async () => {
     const res = await apiFetch('/clock')
     expect(res.status).toBe(200)
     const body = (await readJson(res)) as Record<string, unknown>
@@ -69,6 +69,8 @@ describe('mock API health', () => {
     expect(typeof body.office_open).toBe('boolean')
     expect(typeof body.days_until_next_payroll).toBe('number')
     expect(typeof body.days_until_next_rent).toBe('number')
+    expect(typeof body.days_until_next_interest).toBe('number')
+    expect(body.days_until_next_interest).toBeGreaterThanOrEqual(0)
     expect(typeof body.day_of_week).toBe('string')
   })
 })
@@ -396,6 +398,20 @@ describe('GET /finance', () => {
     const income = body.income as Record<string, unknown>
     expect(typeof income.package_revenue).toBe('number')
     expect(typeof income.trait_bonus).toBe('number')
+
+    // previous_period carries the same breakdown for the preceding week (issue #27).
+    const prev = body.previous_period as Record<string, unknown>
+    expect(typeof prev).toBe('object')
+    expect(typeof prev.from).toBe('string')
+    expect(typeof prev.to).toBe('string')
+    expect(typeof prev.net_change).toBe('number')
+    for (const key of ['income', 'expenses']) {
+      expect(prev[key]).toBeTruthy()
+      const section = prev[key] as Record<string, unknown>
+      for (const value of Object.values(section)) {
+        if (value !== null) expect(typeof value).toBe('number')
+      }
+    }
   })
 
   it('records the office down payment as a negative transaction', async () => {

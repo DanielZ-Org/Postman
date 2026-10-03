@@ -618,6 +618,13 @@ function clockResponse(state: MockState, nowMs: number) {
     const nowDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
     daysRent = Math.max(0, Math.round((dueDay - nowDay) / 86_400_000))
   }
+  const dueInterest = state.interestDueMs
+  const interestDueDay = Date.UTC(
+    new Date(dueInterest).getUTCFullYear(),
+    new Date(dueInterest).getUTCMonth(),
+    new Date(dueInterest).getUTCDate(),
+  )
+  const interestNowDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
   return {
     game_datetime: isoFromMs(now),
     day_of_week: DOW_NAMES[dowIndex(now)],
@@ -626,16 +633,15 @@ function clockResponse(state: MockState, nowMs: number) {
     office_open: isOpenAt(now),
     days_until_next_payroll: daysPayroll,
     days_until_next_rent: daysRent,
+    days_until_next_interest: Math.max(0, Math.round((interestDueDay - interestNowDay) / 86_400_000)),
   }
 }
 
-function financeResponse(state: MockState, nowMs: number) {
-  const weekIndex = Math.floor((nowMs - START_MS) / (7 * 86_400_000))
-  const fromMs = START_MS + weekIndex * 7 * 86_400_000
-  const toMs = fromMs + 7 * 86_400_000 - 1000
-  const fromIso = isoFromMs(fromMs)
-  const toIso = isoFromMs(toMs)
-  const inPeriod = state.txns.filter((t) => t.game_datetime >= fromIso && t.game_datetime <= toIso)
+// financeTotals buckets the transactions inside the inclusive [fromIso, toIso] window
+// into the SPEC 11.3 income/expense breakdown. Used for the current statement period
+// and the previous-period comparison (issue #27) so both share one aggregation.
+function financeTotals(txns: Txn[], fromIso: string, toIso: string) {
+  const inPeriod = txns.filter((t) => t.game_datetime >= fromIso && t.game_datetime <= toIso)
 
   let packageRevenue = 0
   let traitBonus = 0
@@ -667,12 +673,9 @@ function financeResponse(state: MockState, nowMs: number) {
   // All monetary values are integer pence (SPEC 4.3); sums stay exact.
   const incomeTotal = packageRevenue + traitBonus
   const expenseTotal = wages + rent + interest + hiring + vehicleFuel + vehicleMaintenance + other
-  const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
-  const active = state.office && state.office.contract_status === 'active' ? state.office : null
-
   return {
-    cash_balance: state.cash,
-    period: { from: fromIso, to: toIso },
+    from: fromIso,
+    to: toIso,
     income: { package_revenue: packageRevenue, trait_bonus: traitBonus, total: incomeTotal },
     expenses: {
       employee_wages: wages,
@@ -685,12 +688,32 @@ function financeResponse(state: MockState, nowMs: number) {
       total: expenseTotal,
     },
     net_change: incomeTotal - expenseTotal,
+  }
+}
+
+function financeResponse(state: MockState, nowMs: number) {
+  const weekIndex = Math.floor((nowMs - START_MS) / (7 * 86_400_000))
+  const fromMs = START_MS + weekIndex * 7 * 86_400_000
+  const toMs = fromMs + 7 * 86_400_000 - 1000
+  const current = financeTotals(state.txns, isoFromMs(fromMs), isoFromMs(toMs))
+  const previous = financeTotals(state.txns, isoFromMs(fromMs - 7 * 86_400_000), isoFromMs(toMs - 7 * 86_400_000))
+
+  const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
+  const active = state.office && state.office.contract_status === 'active' ? state.office : null
+
+  return {
+    cash_balance: state.cash,
+    period: { from: current.from, to: current.to },
+    income: current.income,
+    expenses: current.expenses,
+    net_change: current.net_change,
     liabilities: {
       loan_principal: state.loanPrincipal,
       accrued_employee_wages: accrued,
       next_rent_amount: active ? active.weekly_rent : 0,
       next_interest_estimate: Math.round(state.loanPrincipal * 0.05),
     },
+    previous_period: previous,
   }
 }
 

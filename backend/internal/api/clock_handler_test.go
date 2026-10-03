@@ -117,6 +117,15 @@ func TestGetClockReturnsCanonicalShape(t *testing.T) {
 	if got := jsonBool(t, clock, "office_open"); !got {
 		t.Error("office_open = false at the canonical start, want true")
 	}
+	if got := jsonInt(t, clock, "days_until_next_payroll"); got != 4 {
+		t.Errorf("days_until_next_payroll = %d, want 4 (first Tuesday after start)", got)
+	}
+	if got := jsonInt(t, clock, "days_until_next_rent"); got != 0 {
+		t.Errorf("days_until_next_rent = %d, want 0 (start is a Friday)", got)
+	}
+	if got := jsonInt(t, clock, "days_until_next_interest"); got != 28 {
+		t.Errorf("days_until_next_interest = %d, want 28 (four-week interval)", got)
+	}
 }
 
 // --- POST /api/v1/clock/pause -------------------------------------------------

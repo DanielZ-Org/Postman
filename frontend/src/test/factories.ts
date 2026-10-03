@@ -21,6 +21,7 @@ export function makeClock(overrides: Partial<ClockState> = {}): ClockState {
     office_open: true,
     days_until_next_payroll: 4,
     days_until_next_rent: 18,
+    days_until_next_interest: 28,
     ...overrides,
   }
 }
@@ -181,6 +182,26 @@ export function makeFinance(overrides: Partial<FinanceStatement> = {}): FinanceS
       next_rent_amount: 5000, // integer pence (SPEC 4.3)
       next_interest_estimate: 0,
     },
+    previous_period: {
+      from: '1980-01-25T00:00:00.000Z',
+      to: '1980-01-31T23:59:59.999Z',
+      income: {
+        package_revenue: 0,
+        trait_bonus: 0,
+        total: 0,
+      },
+      expenses: {
+        employee_wages: 0,
+        rent: 0,
+        loan_interest: 0,
+        hiring: 0,
+        vehicle_fuel: 0,
+        vehicle_maintenance: 0,
+        other: 0,
+        total: 0,
+      },
+      net_change: 0,
+    },
   }
   return {
     ...base,
@@ -189,6 +210,7 @@ export function makeFinance(overrides: Partial<FinanceStatement> = {}): FinanceS
     income: overrides.income ?? base.income,
     expenses: overrides.expenses ?? base.expenses,
     liabilities: overrides.liabilities ?? base.liabilities,
+    previous_period: overrides.previous_period ?? base.previous_period,
   }
 }
 

@@ -391,6 +391,22 @@ func TestGetFinanceStatementIsBare(t *testing.T) {
 	if _, present := body["net_change"]; !present {
 		t.Errorf("statement missing net_change: %v", body)
 	}
+	prev, _ := body["previous_period"].(map[string]any)
+	if prev == nil {
+		t.Fatalf("statement missing previous_period: %v", body)
+	}
+	if prev["from"] != "1980-01-25T00:00:00" || prev["to"] != "1980-01-31T23:59:59" {
+		t.Errorf("previous_period window = %v..%v, want the week before the canonical start",
+			prev["from"], prev["to"])
+	}
+	prevInc, _ := prev["income"].(map[string]any)
+	prevExp, _ := prev["expenses"].(map[string]any)
+	if prevInc == nil || prevExp == nil {
+		t.Fatalf("previous_period sections = income %v expenses %v", prev["income"], prev["expenses"])
+	}
+	if prev["net_change"] != float64(0) {
+		t.Errorf("previous_period.net_change = %v, want 0 for a fresh game", prev["net_change"])
+	}
 }
 
 func TestGetFinanceTransactionsNewestFirst(t *testing.T) {

@@ -55,6 +55,22 @@ describe('api.getClock', () => {
     expect(clock.speed).toBe(1)
   })
 
+  it('parses days_until_next_interest (issue #27)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeClock())))
+    const clock = await api.getClock()
+    expect(clock.days_until_next_interest).toBe(28)
+  })
+
+  it('rejects a clock without days_until_next_interest', async () => {
+    const legacy: Record<string, unknown> = { ...makeClock() }
+    delete legacy.days_until_next_interest
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, legacy)))
+    await expect(api.getClock()).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'UNEXPECTED_RESPONSE',
+    })
+  })
+
   it('throws ApiError when a required field is missing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { speed: 1 })))
     await expect(api.getClock()).rejects.toMatchObject({
@@ -331,6 +347,50 @@ describe('api.getFinance / getTransactions', () => {
     const finance = await api.getFinance()
     expect(finance?.income.total).toBe(0)
     expect(finance?.liabilities.next_rent_amount).toBe(5000) // integer pence
+  })
+
+  it('parses previous_period totals for the week-over-week comparison (issue #27)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          200,
+          makeFinance({
+            previous_period: {
+              from: '1980-01-25T00:00:00.000Z',
+              to: '1980-01-31T23:59:59.999Z',
+              income: { package_revenue: 1000, trait_bonus: 0, total: 1000 },
+              expenses: {
+                employee_wages: 400,
+                rent: 0,
+                loan_interest: 0,
+                hiring: 0,
+                vehicle_fuel: 100,
+                vehicle_maintenance: 0,
+                other: 0,
+                total: 500,
+              },
+              net_change: 500,
+            },
+          }),
+        ),
+      ),
+    )
+    const finance = await api.getFinance()
+    expect(finance?.previous_period.from).toBe('1980-01-25T00:00:00.000Z')
+    expect(finance?.previous_period.income.package_revenue).toBe(1000)
+    expect(finance?.previous_period.expenses.vehicle_fuel).toBe(100)
+    expect(finance?.previous_period.net_change).toBe(500)
+  })
+
+  it('rejects a statement without previous_period', async () => {
+    const legacy: Record<string, unknown> = { ...makeFinance() }
+    delete legacy.previous_period
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, legacy)))
+    await expect(api.getFinance()).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'UNEXPECTED_RESPONSE',
+    })
   })
 
   it('returns null when finance route is missing', async () => {

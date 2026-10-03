@@ -17,6 +17,7 @@ export interface ClockState {
   office_open: boolean
   days_until_next_payroll: number
   days_until_next_rent: number
+  days_until_next_interest: number
 }
 
 export interface Player {
@@ -139,6 +140,26 @@ export interface FinanceStatement {
     accrued_employee_wages: number
     next_rent_amount: number
     next_interest_estimate: number
+  }
+  previous_period: {
+    from: string
+    to: string
+    income: {
+      package_revenue: number
+      trait_bonus: number
+      total: number
+    }
+    expenses: {
+      employee_wages: number
+      rent: number
+      loan_interest: number
+      hiring: number
+      vehicle_fuel: number
+      vehicle_maintenance: number
+      other: number
+      total: number
+    }
+    net_change: number
   }
 }
 
