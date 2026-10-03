@@ -228,3 +228,91 @@ func computeNextRentDue(selection time.Time, prepaidWeeks int) string {
 	due := time.Date(selection.Year(), selection.Month(), selection.Day()+prepaidWeeks*7, 0, 0, 0, 0, selection.Location())
 	return due.Format("2006-01-02T15:04:05")
 }
+
+// officeUpgradeCostPence is the fixed small-to-large upgrade fee (SPEC 4.4, decided 16.14):
+// the down-payment difference 45000 - 35000 = 10000 (100).
+const officeUpgradeCostPence = 10000
+
+// ErrNoActiveOffice is returned by UpgradeOffice when no active head-office contract exists:
+// nothing selected yet, the contract was terminated, or the game has ended. SPEC 4.4 folds all
+// three cases into NO_OFFICE (404).
+var ErrNoActiveOffice = errors.New("no active head office")
+
+// ErrUpgradeNotAvailable is returned by UpgradeOffice when the active head office is already
+// the large office (SPEC 4.4 UPGRADE_NOT_AVAILABLE, 409).
+var ErrUpgradeNotAvailable = errors.New("office upgrade not available")
+
+// findOfficeDefinitionByType resolves a canonical catalogue office by its type name.
+func findOfficeDefinitionByType(officeType string) (OfficeDefinition, bool) {
+	for _, def := range officeCatalogue {
+		if def.Type == officeType {
+			return def, true
+		}
+	}
+	return OfficeDefinition{}, false
+}
+
+// UpgradeOffice atomically upgrades the active small head office to the large office for a
+// fixed 10000p fee (SPEC 4.4, decided 16.14). It validates in the SPEC order under s.mu:
+// (2) no active contract or game over -> ErrNoActiveOffice; (3) already large ->
+// ErrUpgradeNotAvailable; (4) cash below the fee -> InsufficientFundsError. Failed validation
+// leaves state unchanged.
+//
+// On success it commits together: cash is debited through exactly one "upgrade" transaction;
+// type, storage base/max, employee capacity and vehicle capacity switch to the large-office
+// values immediately (used storage is kept); weekly rent becomes the large rent so the NEXT
+// rent charge uses it (prepaid weeks and the rent due date are unchanged). Bicycle capacity,
+// down payment, ID, accepted package sizes, packages, employees, vehicles and runs are
+// untouched (SPEC 4.4 lists only storage, employee and vehicle capacity as switching).
+func (s *GameState) UpgradeOffice() (*RuntimeOffice, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// (2) no active contract or game over -> NO_OFFICE (SPEC 4.4 validation order).
+	if s.status == GameStatusGameOver || s.selectedOffice == nil || s.selectedOffice.ContractStatus != ContractActive {
+		return nil, 0, ErrNoActiveOffice
+	}
+
+	// (3) the active office is already large.
+	if s.selectedOffice.Type != "small" {
+		return nil, 0, ErrUpgradeNotAvailable
+	}
+
+	// (4) sufficient funds.
+	if s.cash < officeUpgradeCostPence {
+		return nil, 0, &InsufficientFundsError{Required: officeUpgradeCostPence, Available: s.cash}
+	}
+
+	large, ok := findOfficeDefinitionByType("large")
+	if !ok {
+		// Unreachable: the canonical catalogue always contains a large office.
+		return nil, 0, ErrUpgradeNotAvailable
+	}
+
+	office := s.selectedOffice
+	office.Type = large.Type
+	office.Storage.Base = large.StorageBase
+	office.Storage.Max = large.StorageMax
+	office.EmployeeCapacity = large.EmployeeCapacity
+	office.VehicleCapacity = large.VehicleCapacity
+	office.WeeklyRent = large.WeeklyRent
+
+	now := s.Clock.Now() // authoritative fictional clock time; no wall clock
+	s.postTransactionLocked(now, CategoryUpgrade, -officeUpgradeCostPence,
+		"Head office upgraded to large", office.ID)
+
+	return office, s.cash, nil
+}
+
+// UpgradeCostPence reports the current small-to-large upgrade fee for the UI (SPEC 4.4):
+// 10000 while an active small head office is under contract, 0 otherwise (no office,
+// terminated contract, already large, or game over).
+func (s *GameState) UpgradeCostPence() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status == GameStatusGameOver || s.selectedOffice == nil ||
+		s.selectedOffice.ContractStatus != ContractActive || s.selectedOffice.Type != "small" {
+		return 0
+	}
+	return officeUpgradeCostPence
+}

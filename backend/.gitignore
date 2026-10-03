@@ -1,2 +1,6 @@
 # Runtime data: SQLite game database and application log files
 /data/
+
+# Local build artifacts and process logs (never committed)
+/postman.exe
+/logs/

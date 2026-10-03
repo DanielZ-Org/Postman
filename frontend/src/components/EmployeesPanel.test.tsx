@@ -64,6 +64,6 @@ describe('EmployeesPanel', () => {
     render(<EmployeesPanel game={makeGameApi()} />)
     expect(screen.getByText('Test Courier')).toBeInTheDocument()
     expect(screen.getByText('snail')).toBeInTheDocument()
-    expect(screen.getByText('neutral')).toBeInTheDocument()
+    expect(screen.getByText('100%')).toBeInTheDocument()
   })
 })

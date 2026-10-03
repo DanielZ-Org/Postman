@@ -213,6 +213,7 @@ function parseClock(payload: unknown): ClockState {
     office_open: requireBoolean(o, 'office_open', 'clock'),
     days_until_next_payroll: requireNumber(o, 'days_until_next_payroll', 'clock'),
     days_until_next_rent: requireNumber(o, 'days_until_next_rent', 'clock'),
+    days_until_next_interest: requireNumber(o, 'days_until_next_interest', 'clock'),
   }
 }
 
@@ -283,6 +284,7 @@ function parseOfficeOffer(value: unknown, path: string): OfficeOffer {
     bicycle_capacity: requireNumber(o, 'bicycle_capacity', path),
     vehicle_capacity: requireNumber(o, 'vehicle_capacity', path),
     accepted_package_sizes: requireStringArray(o, 'accepted_package_sizes', path),
+    upgrade_cost_pence: requireNumber(o, 'upgrade_cost_pence', path),
   }
 }
 
@@ -386,7 +388,7 @@ function parseEmployee(value: unknown, path: string): Employee {
     name: requireString(o, 'name', path),
     speed_trait: requireString(o, 'speed_trait', path),
     skills: requireStringArray(o, 'skills', path),
-    mood: requireString(o, 'mood', path),
+    mood: requireNumber(o, 'mood', path),
     current_delivery_mode: requireString(o, 'current_delivery_mode', path),
     packages_delivered_this_week: requireNumber(o, 'packages_delivered_this_week', path),
     accrued_wages: requireNumber(o, 'accrued_wages', path),
@@ -403,37 +405,62 @@ function parseHiring(value: unknown, path: string): HiringState {
   }
 }
 
+function parseLiabilities(value: unknown) {
+  const o = requireObject(value, 'finance.liabilities')
+  return {
+    loan_principal: requireNumber(o, 'loan_principal', 'finance.liabilities'),
+    accrued_employee_wages: requireNumber(o, 'accrued_employee_wages', 'finance.liabilities'),
+    next_rent_amount: requireNumber(o, 'next_rent_amount', 'finance.liabilities'),
+    next_interest_estimate: requireNumber(o, 'next_interest_estimate', 'finance.liabilities'),
+  }
+}
+
+// parseIncomeBlock / parseExpenseBlock read one statement's income or expenses
+// breakdown. The current period and previous_period share the same shape, so both
+// are parsed through these helpers (issue #27).
+function parseIncomeBlock(value: unknown, path: string) {
+  const o = requireObject(value, path)
+  return {
+    package_revenue: requireNumber(o, 'package_revenue', path),
+    trait_bonus: requireNumber(o, 'trait_bonus', path),
+    total: requireNumber(o, 'total', path),
+  }
+}
+
+function parseExpenseBlock(value: unknown, path: string) {
+  const o = requireObject(value, path)
+  return {
+    employee_wages: requireNumber(o, 'employee_wages', path),
+    rent: requireNumber(o, 'rent', path),
+    loan_interest: requireNumber(o, 'loan_interest', path),
+    hiring: requireNumber(o, 'hiring', path),
+    vehicle_fuel: requireNumber(o, 'vehicle_fuel', path),
+    vehicle_maintenance: requireNumber(o, 'vehicle_maintenance', path),
+    other: requireNumber(o, 'other', path),
+    total: requireNumber(o, 'total', path),
+  }
+}
+
 function parseFinance(payload: unknown): FinanceStatement {
   const root = requireObject(payload, 'finance')
   const period = requireObject(root.period, 'finance.period')
-  const income = requireObject(root.income, 'finance.income')
-  const expenses = requireObject(root.expenses, 'finance.expenses')
-  const liabilities = requireObject(root.liabilities, 'finance.liabilities')
+  const prev = requireObject(root.previous_period, 'finance.previous_period')
   return {
     cash_balance: requireNumber(root, 'cash_balance', 'finance'),
     period: {
       from: requireString(period, 'from', 'finance.period'),
       to: requireString(period, 'to', 'finance.period'),
     },
-    income: {
-      package_revenue: requireNumber(income, 'package_revenue', 'finance.income'),
-      trait_bonus: requireNumber(income, 'trait_bonus', 'finance.income'),
-      total: requireNumber(income, 'total', 'finance.income'),
-    },
-    expenses: {
-      employee_wages: requireNumber(expenses, 'employee_wages', 'finance.expenses'),
-      rent: requireNumber(expenses, 'rent', 'finance.expenses'),
-      loan_interest: requireNumber(expenses, 'loan_interest', 'finance.expenses'),
-      hiring: requireNumber(expenses, 'hiring', 'finance.expenses'),
-      other: requireNumber(expenses, 'other', 'finance.expenses'),
-      total: requireNumber(expenses, 'total', 'finance.expenses'),
-    },
+    income: parseIncomeBlock(root.income, 'finance.income'),
+    expenses: parseExpenseBlock(root.expenses, 'finance.expenses'),
     net_change: requireNumber(root, 'net_change', 'finance'),
-    liabilities: {
-      loan_principal: requireNumber(liabilities, 'loan_principal', 'finance.liabilities'),
-      accrued_employee_wages: requireNumber(liabilities, 'accrued_employee_wages', 'finance.liabilities'),
-      next_rent_amount: requireNumber(liabilities, 'next_rent_amount', 'finance.liabilities'),
-      next_interest_estimate: requireNumber(liabilities, 'next_interest_estimate', 'finance.liabilities'),
+    liabilities: parseLiabilities(root.liabilities),
+    previous_period: {
+      from: requireString(prev, 'from', 'finance.previous_period'),
+      to: requireString(prev, 'to', 'finance.previous_period'),
+      income: parseIncomeBlock(prev.income, 'finance.previous_period.income'),
+      expenses: parseExpenseBlock(prev.expenses, 'finance.previous_period.expenses'),
+      net_change: requireNumber(prev, 'net_change', 'finance.previous_period'),
     },
   }
 }
@@ -487,6 +514,13 @@ export const api = {
       body: JSON.stringify({ office_id: officeId }),
     })
     return parseSelectOffice(payload, officeId)
+  },
+
+  // upgradeOffice upgrades the active small head office to large for the fixed fee
+  // (SPEC 4.4). The endpoint takes no request body; the response carries the upgraded
+  // office and cash balance, but callers refresh from GET /game.
+  upgradeOffice(): Promise<unknown> {
+    return request<unknown>('/offices/upgrade', { method: 'POST', body: JSON.stringify({}) })
   },
 
   // getOffice reads the selected runtime office (SPEC 4.1). It returns null before a
@@ -581,6 +615,12 @@ export const api = {
       if (isMissingRoute(err)) return []
       throw err
     }
+  },
+
+  // repayLoan posts one voluntary loan repayment in integer pence (SPEC 11.1). The
+  // response carries the updated player projection, but callers refresh from GET /game.
+  repayLoan(amount: number): Promise<unknown> {
+    return request<unknown>('/finance/repay', { method: 'POST', body: JSON.stringify({ amount }) })
   },
 
   resetGame(): Promise<unknown> {

@@ -302,3 +302,165 @@ func TestOfficesUnsupportedMethods(t *testing.T) {
 		}
 	})
 }
+
+// TestUpgradeEndpoint verifies POST /api/v1/offices/upgrade end to end (SPEC 4.4): a small
+// office upgrades for 10000p (200 with the upgraded office + cash balance), a second upgrade
+// returns 409 UPGRADE_NOT_AVAILABLE, and unsupported methods are rejected without mutation.
+func TestUpgradeEndpoint(t *testing.T) {
+	h, state := newTestRouter()
+	if rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/select", `{"office_id":"office-small-01"}`); rec.Code != http.StatusOK {
+		t.Fatalf("select small status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("upgrade status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Office struct {
+			Type             string `json:"type"`
+			EmployeeCapacity int    `json:"employee_capacity"`
+			VehicleCapacity  int    `json:"vehicle_capacity"`
+		} `json:"office"`
+		CashBalance int `json:"cash_balance"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v; body=%s", err, rec.Body.String())
+	}
+	if body.Office.Type != "large" || body.Office.EmployeeCapacity != 7 || body.Office.VehicleCapacity != 2 {
+		t.Errorf("office = %+v, want large/7/2", body.Office)
+	}
+	if body.CashBalance != 55000 || state.Cash() != 55000 {
+		t.Errorf("cash = %d/%d, want 55000p", body.CashBalance, state.Cash())
+	}
+
+	// Second upgrade: the active office is already large.
+	again := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", "")
+	if again.Code != http.StatusConflict || errorCode(t, again.Body.Bytes()) != "UPGRADE_NOT_AVAILABLE" {
+		t.Fatalf("second upgrade = %d/%s, want 409 UPGRADE_NOT_AVAILABLE; body=%s",
+			again.Code, errorCodeSafe(again), again.Body.String())
+	}
+
+	// Unsupported method without mutation.
+	get := doRequest(t, h, http.MethodGet, "/api/v1/offices/upgrade", "")
+	if get.Code != http.StatusMethodNotAllowed || errorCode(t, get.Body.Bytes()) != "METHOD_NOT_ALLOWED" {
+		t.Errorf("GET upgrade = %d/%s, want 405 METHOD_NOT_ALLOWED", get.Code, errorCodeSafe(get))
+	}
+}
+
+// TestUpgradeInvalidRequests verifies transport validation and the NO_OFFICE mapping: a body
+// with fields is a 400 before any business rule, garbage is a 400, and calling without an
+// active office returns 404 NO_OFFICE (SPEC 4.4 validation order).
+func TestUpgradeInvalidRequests(t *testing.T) {
+	t.Run("unexpected body field", func(t *testing.T) {
+		h, state := newTestRouter()
+		rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", `{"amount":100}`)
+		if rec.Code != http.StatusBadRequest || errorCode(t, rec.Body.Bytes()) != "INVALID_REQUEST" {
+			t.Fatalf("status/code = %d/%s, want 400 INVALID_REQUEST; body=%s",
+				rec.Code, errorCodeSafe(rec), rec.Body.String())
+		}
+		if state.Cash() != 100000 || state.SelectedOffice() != nil {
+			t.Errorf("state mutated: cash %d office %v", state.Cash(), state.SelectedOffice())
+		}
+	})
+
+	t.Run("malformed JSON", func(t *testing.T) {
+		h, _ := newTestRouter()
+		rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", `not-json`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("no active office", func(t *testing.T) {
+		h, state := newTestRouter()
+		rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", "")
+		if rec.Code != http.StatusNotFound || errorCode(t, rec.Body.Bytes()) != "NO_OFFICE" {
+			t.Fatalf("status/code = %d/%s, want 404 NO_OFFICE; body=%s",
+				rec.Code, errorCodeSafe(rec), rec.Body.String())
+		}
+		if state.Cash() != 100000 {
+			t.Errorf("cash = %d, want unchanged", state.Cash())
+		}
+	})
+}
+
+// TestUpgradeErrorMapping verifies the canonical SPEC 4.4 error codes for all three failure
+// kinds, including the required/available details on INSUFFICIENT_FUNDS.
+func TestUpgradeErrorMapping(t *testing.T) {
+	state := game.NewInitialState()
+	oh := newOfficeHandler(state)
+
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{"no active office", game.ErrNoActiveOffice, http.StatusNotFound, "NO_OFFICE"},
+		{"already large", game.ErrUpgradeNotAvailable, http.StatusConflict, "UPGRADE_NOT_AVAILABLE"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			oh.writeUpgradeError(w, tc.err)
+			if w.Code != tc.status || errorCode(t, w.Body.Bytes()) != tc.code {
+				t.Errorf("status/code = %d/%s, want %d/%s", w.Code, errorCodeSafe(w), tc.status, tc.code)
+			}
+		})
+	}
+
+	t.Run("insufficient funds details", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		oh.writeUpgradeError(w, &game.InsufficientFundsError{Required: 10000, Available: 4000})
+		if w.Code != http.StatusConflict || errorCode(t, w.Body.Bytes()) != "INSUFFICIENT_FUNDS" {
+			t.Fatalf("status/code = %d/%s, want 409 INSUFFICIENT_FUNDS", w.Code, errorCodeSafe(w))
+		}
+		details, _ := decodeJSON(t, w.Body.Bytes())["error"].(map[string]any)["details"].(map[string]any)
+		if details["required"] != float64(10000) || details["available"] != float64(4000) {
+			t.Errorf("details = %v, want required 10000 available 4000", details)
+		}
+	})
+}
+
+// TestGetOfficesUpgradeCostPence verifies the UI field (SPEC 4.4): upgrade_cost_pence is 10000
+// on every catalogue entry only while an active small head office exists, 0 otherwise.
+func TestGetOfficesUpgradeCostPence(t *testing.T) {
+	h, _ := newTestRouter()
+
+	costs := func() []float64 {
+		rec := doRequest(t, h, http.MethodGet, "/api/v1/offices", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /offices status = %d", rec.Code)
+		}
+		var body struct {
+			Offices []map[string]any `json:"offices"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		out := make([]float64, 0, len(body.Offices))
+		for _, o := range body.Offices {
+			out = append(out, o["upgrade_cost_pence"].(float64))
+		}
+		return out
+	}
+
+	if got := costs(); len(got) != 2 || got[0] != 0 || got[1] != 0 {
+		t.Fatalf("initial costs = %v, want [0 0]", got)
+	}
+
+	if rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/select", `{"office_id":"office-small-01"}`); rec.Code != http.StatusOK {
+		t.Fatalf("select = %d", rec.Code)
+	}
+	if got := costs(); got[0] != 10000 || got[1] != 10000 {
+		t.Errorf("costs with active small = %v, want [10000 10000]", got)
+	}
+
+	if rec := doRequest(t, h, http.MethodPost, "/api/v1/offices/upgrade", ""); rec.Code != http.StatusOK {
+		t.Fatalf("upgrade = %d", rec.Code)
+	}
+	if got := costs(); got[0] != 0 || got[1] != 0 {
+		t.Errorf("costs after upgrade = %v, want [0 0]", got)
+	}
+}

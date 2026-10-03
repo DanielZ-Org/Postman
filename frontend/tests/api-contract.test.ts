@@ -60,7 +60,7 @@ describe('mock API health', () => {
     expect(game.game_datetime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
-  it('GET /clock returns speed, pause, and payroll/rent countdowns', async () => {
+  it('GET /clock returns speed, pause, and payroll/rent/interest countdowns', async () => {
     const res = await apiFetch('/clock')
     expect(res.status).toBe(200)
     const body = (await readJson(res)) as Record<string, unknown>
@@ -69,6 +69,8 @@ describe('mock API health', () => {
     expect(typeof body.office_open).toBe('boolean')
     expect(typeof body.days_until_next_payroll).toBe('number')
     expect(typeof body.days_until_next_rent).toBe('number')
+    expect(typeof body.days_until_next_interest).toBe('number')
+    expect(body.days_until_next_interest).toBeGreaterThanOrEqual(0)
     expect(typeof body.day_of_week).toBe('string')
   })
 })
@@ -396,6 +398,20 @@ describe('GET /finance', () => {
     const income = body.income as Record<string, unknown>
     expect(typeof income.package_revenue).toBe('number')
     expect(typeof income.trait_bonus).toBe('number')
+
+    // previous_period carries the same breakdown for the preceding week (issue #27).
+    const prev = body.previous_period as Record<string, unknown>
+    expect(typeof prev).toBe('object')
+    expect(typeof prev.from).toBe('string')
+    expect(typeof prev.to).toBe('string')
+    expect(typeof prev.net_change).toBe('number')
+    for (const key of ['income', 'expenses']) {
+      expect(prev[key]).toBeTruthy()
+      const section = prev[key] as Record<string, unknown>
+      for (const value of Object.values(section)) {
+        if (value !== null) expect(typeof value).toBe('number')
+      }
+    }
   })
 
   it('records the office down payment as a negative transaction', async () => {
@@ -408,6 +424,129 @@ describe('GET /finance', () => {
     )
     expect(downPayment).toBeTruthy()
     expect(Number(downPayment?.amount)).toBeLessThan(0)
+  })
+})
+
+describe('POST /finance/repay', () => {
+  it('repays and returns the updated player projection', async () => {
+    const res = await post('/finance/repay', { amount: 20000 })
+    expect(res.status).toBe(200)
+    const body = (await readJson(res)) as Record<string, unknown>
+    expect(body.repaid_amount).toBe(20000)
+    const player = body.player as Record<string, unknown>
+    expect(player.cash).toBe(80000) // 100000 - 20000 pence
+    expect(player.loan_principal).toBe(80000)
+
+    // The repayment shows up in the statement liabilities and transaction history.
+    const finance = (await readJson(await apiFetch('/finance'))) as Record<string, unknown>
+    const liabilities = finance.liabilities as Record<string, unknown>
+    expect(liabilities.loan_principal).toBe(80000)
+    const txns = (await readJson(await apiFetch('/finance/transactions'))) as {
+      transactions: Record<string, unknown>[]
+    }
+    const repayment = txns.transactions.find((t) => t.category === 'loan_repayment')
+    expect(repayment?.amount).toBe(-20000)
+    expect(repayment?.reference_id).toBe('loan-1')
+  })
+
+  it('rejects invalid amounts with 400 INVALID_REQUEST', async () => {
+    for (const amount of [0, -1, 1.5, '20000']) {
+      const res = await post('/finance/repay', { amount })
+      expect(res.status, `amount=${JSON.stringify(amount)}`).toBe(400)
+      const body = (await readJson(res)) as ErrorBody
+      expect(body.error?.code).toBe('INVALID_REQUEST')
+    }
+    const missing = await post('/finance/repay', {})
+    expect(missing.status).toBe(400)
+    expect(((await readJson(missing)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
+
+    const extra = await post('/finance/repay', { amount: 100, note: 'x' })
+    expect(extra.status).toBe(400)
+    expect(((await readJson(extra)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
+  })
+
+  it('rejects amounts above min(cash, principal) with 409 INSUFFICIENT_FUNDS', async () => {
+    const res = await post('/finance/repay', { amount: 200000 })
+    expect(res.status).toBe(409)
+    const errObj = ((await readJson(res)) as ErrorBody).error as
+      | { code?: string; details?: Record<string, number> }
+      | undefined
+    expect(errObj?.code).toBe('INSUFFICIENT_FUNDS')
+    expect(errObj?.details?.required).toBe(200000)
+    expect(errObj?.details?.available).toBe(100000)
+  })
+
+  it('rejects GET with 405', async () => {
+    const res = await apiFetch('/finance/repay')
+    expect(res.status).toBe(405)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('METHOD_NOT_ALLOWED')
+  })
+
+  it('leaves state unchanged after a failed repayment', async () => {
+    await post('/finance/repay', { amount: 200000 })
+    const game = (await readJson(await apiFetch('/game'))) as Record<string, unknown>
+    expect((game.player as Record<string, unknown>).cash).toBe(100000)
+    const finance = (await readJson(await apiFetch('/finance'))) as Record<string, unknown>
+    expect((finance.liabilities as Record<string, unknown>).loan_principal).toBe(100000)
+  })
+})
+
+describe('POST /offices/upgrade (SPEC 4.4)', () => {
+  async function upgradeCosts(): Promise<number[]> {
+    const body = (await readJson(await apiFetch('/offices'))) as { offices?: Record<string, unknown>[] }
+    return (body.offices ?? []).map((o) => Number(o.upgrade_cost_pence))
+  }
+
+  it('reports the fee, performs the upgrade, then reports 0 again', async () => {
+    expect(await upgradeCosts()).toEqual([0, 0])
+
+    await post('/offices/select', { office_id: 'office-small-01' })
+    expect(await upgradeCosts()).toEqual([10000, 10000])
+
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(200)
+    const body = (await readJson(res)) as Record<string, unknown>
+    const office = body.office as Record<string, unknown>
+    expect(office.type).toBe('large')
+    expect(office.employee_capacity).toBe(7)
+    expect(office.vehicle_capacity).toBe(2)
+    expect(office.weekly_rent).toBe(7500)
+    expect(body.cash_balance).toBe(55000) // 100000 - 35000 - 10000 pence
+
+    const runtime = (await readJson(await apiFetch('/office'))) as Record<string, unknown>
+    expect((runtime.office as Record<string, unknown>).type).toBe('large')
+
+    const txns = (await readJson(await apiFetch('/finance/transactions'))) as {
+      transactions: Record<string, unknown>[]
+    }
+    const upgrade = txns.transactions.find((t) => t.category === 'upgrade')
+    expect(upgrade?.amount).toBe(-10000)
+
+    expect(await upgradeCosts()).toEqual([0, 0])
+  })
+
+  it('rejects a second upgrade with 409 UPGRADE_NOT_AVAILABLE', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/offices/upgrade')
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(409)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('UPGRADE_NOT_AVAILABLE')
+  })
+
+  it('returns 404 NO_OFFICE without an active contract', async () => {
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(404)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('NO_OFFICE')
+  })
+
+  it('rejects GET with 405 and a non-empty body with 400', async () => {
+    const get = await apiFetch('/offices/upgrade')
+    expect(get.status).toBe(405)
+    expect(((await readJson(get)) as ErrorBody).error?.code).toBe('METHOD_NOT_ALLOWED')
+
+    const bad = await post('/offices/upgrade', { amount: 100 })
+    expect(bad.status).toBe(400)
+    expect(((await readJson(bad)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
   })
 })
 

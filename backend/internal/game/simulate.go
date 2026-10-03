@@ -2,8 +2,9 @@ package game
 
 import "time"
 
-// Delivery-run phases (SPEC 9.1): packing (1 game hour) then out_for_delivery
-// (3 game hours), after which the employee returns to ready.
+// Delivery-run phases (SPEC 9.1): packing (1 game hour, all modes) then
+// out_for_delivery (mode- and trait-specific, decided 16.13), after which the
+// employee returns to ready.
 const (
 	RunPhasePacking        = "packing"
 	RunPhaseOutForDelivery = "out_for_delivery"
@@ -53,6 +54,7 @@ func (s *GameState) processLocked(now time.Time) bool {
 	changed = s.processRunsLocked(now) || changed
 	changed = s.processPayrollLocked(now) || changed
 	changed = s.processRentLocked(now) || changed
+	changed = s.processVehicleMaintenanceLocked(now) || changed
 	changed = s.processInterestLocked(now) || changed
 	changed = s.generatePackagesLocked(now) || changed
 	changed = s.checkGameOverLocked(now) || changed
@@ -98,6 +100,17 @@ func (s *GameState) rolloverDayLocked(now time.Time) bool {
 	return changed
 }
 
+// runOutPhaseDuration returns the out-for-delivery step for an in-flight run: the
+// employee's locked mode and speed trait decide it (SPEC 9.1, decided 16.13/16.5).
+// If the employee cannot be found (defensive; attrition never removes a busy
+// employee), the legacy foot 3h step keeps the run moving.
+func (s *GameState) runOutPhaseDuration(employeeID string) time.Duration {
+	if emp := s.findEmployeeLocked(employeeID); emp != nil {
+		return time.Duration(outPhaseMinutes(emp.CurrentDeliveryMode, emp.SpeedTrait)) * time.Minute
+	}
+	return 3 * time.Hour
+}
+
 // processRunsLocked advances in-flight delivery runs. Each run that reached its
 // phase end either transitions packing -> out_for_delivery or completes: packages
 // deliver, revenue posts, wages accrue and the employee returns to ready. A long gap
@@ -113,7 +126,10 @@ func (s *GameState) processRunsLocked(now time.Time) bool {
 			switch run.Phase {
 			case RunPhasePacking:
 				run.Phase = RunPhaseOutForDelivery
-				run.PhaseEnd = run.PhaseEnd.Add(deliveryDuration)
+				// Mode and speed trait are locked while the run is in flight
+				// (SetEmployeeMode requires a ready employee), so the employee's
+				// current values are the assignment values (SPEC 9.1/16.5).
+				run.PhaseEnd = run.PhaseEnd.Add(s.runOutPhaseDuration(run.EmployeeID))
 				for _, id := range run.PackageIDs {
 					if p := s.findPackageLocked(id); p != nil && p.Status == PackageAssigned {
 						p.Status = PackageOutForDelivery
@@ -203,6 +219,11 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 			// employee to be ready), so the completion-time mode is the assignment mode.
 			emp.AccruedWages += delivered * wagePerPackageFor(emp.CurrentDeliveryMode)
 		}
+		if emp.CurrentDeliveryMode == ModeCar {
+			// Fuel: 150p per completed car run, charged whenever the out-phase ends
+			// (SPEC 12, decided SPEC 16.7).
+			s.postTransactionLocked(at, CategoryVehicleFuel, -carFuelPerRun, "Car run fuel", run.EmployeeID)
+		}
 		emp.Status = EmployeeReady
 	}
 	if dayKey(at) == s.deliveredTodayKey {
@@ -212,9 +233,12 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 
 // processPayrollLocked settles due Tuesday payrolls (SPEC 10/11.2): every accrued
 // wage posts as one employee_wages transaction, accrued wages clear and the weekly
-// per-employee delivery counters reset. Missed-payroll consequences are decided
-// (SPEC 16.8): payroll settles unconditionally — cash may go negative, wages are
-// never left unpaid, and there is no additional penalty (mood/retention is M3).
+// per-employee delivery counters reset. Payroll settles unconditionally — cash may go
+// negative and wages are never left unpaid (decided SPEC 16.8). Mood then settles with
+// the payroll (SPEC 10, decided 16.15): +5 for everyone when cash stayed non-negative,
+// −25 when the payroll left cash negative; afterwards each ready employee at or below
+// the quit threshold rolls a 20% chance to leave (mid-run employees wait for the next
+// payroll). Wages already settled are not reversed.
 func (s *GameState) processPayrollLocked(now time.Time) bool {
 	changed := false
 	for !now.Before(s.payrollDue) {
@@ -225,10 +249,25 @@ func (s *GameState) processPayrollLocked(now time.Time) bool {
 		if total > 0 {
 			s.postTransactionLocked(s.payrollDue, CategoryEmployeeWages, -total, "Tuesday payroll", "")
 		}
+		delta := moodPayrollUp
+		if s.cash < 0 {
+			delta = -moodPayrollDown
+		}
 		for _, e := range s.employees {
+			e.Mood = clampMood(e.Mood + delta)
 			e.AccruedWages = 0
 			e.PackagesDeliveredThisWeek = 0
 		}
+		remaining := s.employees[:0]
+		for _, e := range s.employees {
+			quits := e.Status == EmployeeReady && e.Mood <= moodQuitThreshold &&
+				randIntn(100) < moodQuitChancePercent
+			if quits {
+				continue // removed from the roster; already-settled wages stay posted
+			}
+			remaining = append(remaining, e)
+		}
+		s.employees = remaining
 		s.payrollDue = s.payrollDue.AddDate(0, 0, 7)
 		changed = true
 	}
@@ -275,6 +314,30 @@ func (s *GameState) processRentLocked(now time.Time) bool {
 		changed = true
 	}
 	return changed
+}
+
+// processVehicleMaintenanceLocked charges weekly vehicle maintenance (SPEC 12;
+// decided SPEC 16.7): every Friday, 100p per owned bicycle and 500p per owned car post
+// as one vehicle_maintenance transaction. The charge snaps to the most recent Friday at
+// or before now, so an interval skipped across Friday close (SPEC 14.4) still charges
+// exactly once per Friday; lastMaintenanceKey deduplicates. A Friday where no vehicle
+// is owned only marks the day (buying later that Friday defers upkeep to next week).
+// Calendar events are not gated by opening hours (same as rent and interest).
+func (s *GameState) processVehicleMaintenanceLocked(now time.Time) bool {
+	delta := (int(now.Weekday()) - int(time.Friday) + 7) % 7
+	friday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -delta)
+	key := dayKey(friday)
+	if s.lastMaintenanceKey == key {
+		return false
+	}
+	s.lastMaintenanceKey = key
+	total := s.bicyclesOwned*bicycleMaintenanceWeekly + s.carsOwned*carMaintenanceWeekly
+	if total == 0 {
+		return false
+	}
+	s.postTransactionLocked(friday, CategoryVehicleMaintenance, -total,
+		"Friday vehicle maintenance ("+itoa(s.bicyclesOwned)+" bicycle, "+itoa(s.carsOwned)+" car)", "vehicle-maintenance")
+	return true
 }
 
 // processInterestLocked charges due four-week loan interest (SPEC 11.1: 5% of

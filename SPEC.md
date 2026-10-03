@@ -168,7 +168,8 @@ An internal event architecture may be added later; an external event API is not 
   "paused": false,
   "office_open": true,
   "days_until_next_payroll": 4,
-  "days_until_next_rent": 0
+  "days_until_next_rent": 0,
+  "days_until_next_interest": 28
 }
 ```
 
@@ -375,6 +376,21 @@ All errors use the canonical envelope from §14.1 (`error.code`, `error.message`
 
 The generic codes also apply: `INVALID_JSON` (400) for malformed JSON / multiple values / undecodable body; `INVALID_REQUEST` (400) for missing `office_id`, wrong type, empty office ID, unknown fields, or otherwise-invalid shape. `GET /api/v1/offices` accepts GET only and `POST /api/v1/offices/select` accepts POST only; other methods return HTTP 405 with `METHOD_NOT_ALLOWED` (JSON) and must not mutate state. No plain-text errors on Office API routes.
 
+## 4.4 Office upgrade (M3)
+
+Decided (§16.14): while a contract is active, a **small** office can be upgraded to the **large** office for **£100** (`10000` pence) — the down-payment difference (`45000 − 35000`).
+
+`POST /api/v1/offices/upgrade` (no request body) performs the upgrade atomically:
+
+- cash is debited `10000`;
+- `type` becomes `large`, and storage base/max, employee capacity and vehicle capacity switch to the large-office values immediately (used storage is kept);
+- weekly rent becomes the large-office rent from the **next** rent charge; already-prepaid weeks and the rent due date are unchanged;
+- packages, employees, vehicles and runs are unaffected.
+
+`GET /api/v1/offices` reports, per selectable office, `upgrade_cost_pence` (`10000` when the active office is small, `0` otherwise) so the UI can offer the button.
+
+Validation order: (1) malformed transport; (2) no active contract or game over → `NO_OFFICE` (404); (3) active office already large → `UPGRADE_NOT_AVAILABLE` (409); (4) cash < `10000` → `INSUFFICIENT_FUNDS` (409, details `{"required":10000,"available":M}`). Failed validation leaves state unchanged.
+
 ---
 
 # 5. Packages
@@ -525,7 +541,7 @@ Initial family/archetype labels:
 
 These represent employee speed/performance characteristics.
 
-Exact numeric modifiers are decided: Snail **0.8×**, Chicken **1.0×**, Cheetah **1.2×**. They take effect when delivery-duration mechanics land (M3); until then the trait is stored but inert (§16.5).
+Exact numeric modifiers are decided: Snail **0.8×**, Chicken **1.0×**, Cheetah **1.2×**. They are **speed** multipliers applied to the out-for-delivery phase of a cycle (out duration = base out duration ÷ modifier), effective with the M3 delivery-duration mechanics (§9.1, §16.5).
 
 ## 7.2 Skills
 
@@ -582,7 +598,7 @@ This is an actual per-employee counter, not merely an aggregate company statisti
   "name": "Bob Snail",
   "speed_trait": "snail",
   "skills": [],
-  "mood": "neutral",
+  "mood": 100,
   "current_delivery_mode": "foot",
   "packages_delivered_this_week": 0,
   "accrued_wages": 0.0,
@@ -636,9 +652,21 @@ The backend chooses/validates the actual packages according to canonical eligibi
 
 Exact automatic package priority is decided: **express first, then earliest due date** (§16.4).
 
-## 9.1 Walking delivery duration
+## 9.1 Delivery duration
 
-For the first vertical slice, a walking delivery cycle lasts **4 game hours**:
+A delivery cycle has two phases: packing, then out for delivery. Per-mode durations are decided (§16.13):
+
+| Mode | Packing | Out for delivery | Cycle total |
+|---|---:|---:|---:|
+| Foot | 1 game hour | 3 game hours | 4 game hours |
+| Bicycle | 1 game hour | 1.5 game hours | 2.5 game hours |
+| Car | 1 game hour | 1 game hour | 2 game hours |
+
+The totals match the runs-per-working-day allocations of §9.3: foot 2 × 4h = 8h, bicycle 3 × 2.5h = 7.5h, car 2 × 2h = 4h, all inside the weekday `09:00–17:00`.
+
+Speed traits scale the out-for-delivery phase as speed multipliers (§7.1): out duration = base out duration ÷ modifier (§16.5). Snail lengthens the out phase, Cheetah shortens it; packing is unaffected. Results are rounded to whole game minutes, half away from zero (consistent with §4.3) — e.g. bicycle + Snail = 113 minutes.
+
+The canonical foot cycle lasts **4 game hours**:
 
 - **1 game hour — packing/preparation**
 - **3 game hours — out for delivery**
@@ -674,7 +702,7 @@ Example:
 
 This creates a deliberate player trade-off between waiting for a fuller load and leaving early enough to preserve another delivery opportunity.
 
-Bicycle and car timing can be defined separately later without changing this model.
+The schedule above (and the opportunity/late-departure model) applies to every mode with that mode's cycle length from the §9.1 table.
 
 ## 9.2 Capacity per run
 
@@ -716,7 +744,17 @@ An express package counts as **one package for wages**, despite consuming two de
 
 Wages accrue as deliveries occur and are settled every **Tuesday**.
 
-Missed-payroll consequences are decided for now: payroll settles unconditionally every Tuesday — cash may go negative, wages are never left unpaid, and there is no additional penalty. Mood/retention consequences are M3 scope (§16.8).
+Missed-payroll consequences are decided: payroll settles unconditionally every Tuesday — cash may go negative, wages are never left unpaid. The only consequence is the mood effect below (§16.8).
+
+### Employee mood and retention (decided, M3)
+
+Each employee has a **mood** from 0 to 100, starting at 100 (§16.8):
+
+- payroll settles **without** driving cash negative → every employee **+5** mood (capped at 100);
+- payroll settles **with** cash negative (wages unaffordable) → every employee **−25** mood;
+- after the mood update, each **ready** employee with mood **≤ 30** has a **20% chance to quit** that Tuesday. A quitting employee is removed; an employee mid-run stays until the next payroll. Wages already settled are not reversed.
+
+Mood is persisted, exposed on `GET /api/v1/employees`, and shown in the employees UI.
 
 ### Example payroll entry
 
@@ -755,7 +793,7 @@ Initial:
 - interest: **5% every four game weeks**
 - initial four-week interest on £1,000: **£50**
 
-Loan repayment is decided for now: the loan is **interest-only** — 5% of principal every four weeks, principal never decreases and there is no repayment endpoint. A voluntary lump-sum repayment UI is M3 scope (§16.9).
+The loan schedule stays **interest-only**: 5% of principal every four weeks; principal never decreases on its own (§16.9). Voluntary lump-sum repayment is implemented (M3, §16.9): `POST /api/v1/finance/repay` accepts a JSON body `{"amount": <pence>}` with `0 < amount ≤ min(cash, principal)`; it reduces the principal, posts a `loan_repayment` transaction for the paid amount, and the next 5% interest charge recalculates from the new principal. Invalid amounts return `INVALID_REQUEST` (400), unaffordable amounts `INSUFFICIENT_FUNDS` (409); state unchanged in both cases. In the weekly statement the payment books under **Other** expenses so `net_change` stays equal to the cash movement.
 
 ## 11.2 Scheduled costs
 
@@ -777,8 +815,13 @@ Recommended categories include:
 - `hiring_bonus`
 - `employee_wages`
 - `loan_interest`
-- future `vehicle_purchase`
-- future `upgrade`
+- `vehicle_purchase`
+- `vehicle_fuel`
+- `vehicle_maintenance`
+- `loan_repayment`
+- `upgrade`
+
+The statement also carries `previous_period`: the identical `from`/`to`, `income`, `expenses` and `net_change` breakdown for the immediately preceding 7-day window on the same weekly grid, so the finance UI can render a week-over-week comparison without re-aggregating transactions client-side. Before the canonical start (§2.1) that window is a zero-activity window with real boundaries, not an absent section.
 
 ### Example finance statement
 
@@ -799,6 +842,8 @@ Recommended categories include:
     "rent": 0.0,
     "loan_interest": 0.0,
     "hiring": 50.0,
+    "vehicle_fuel": 0.0,
+    "vehicle_maintenance": 0.0,
     "other": 0.0,
     "total": 86.0
   },
@@ -808,6 +853,26 @@ Recommended categories include:
     "accrued_employee_wages": 0.0,
     "next_rent_amount": 50.0,
     "next_interest_estimate": 50.0
+  },
+  "previous_period": {
+    "from": "1980-01-25T00:00:00",
+    "to": "1980-01-31T23:59:59",
+    "income": {
+      "package_revenue": 0.0,
+      "trait_bonus": 0.0,
+      "total": 0.0
+    },
+    "expenses": {
+      "employee_wages": 0.0,
+      "rent": 0.0,
+      "loan_interest": 0.0,
+      "hiring": 0.0,
+      "vehicle_fuel": 0.0,
+      "vehicle_maintenance": 0.0,
+      "other": 0.0,
+      "total": 0.0
+    },
+    "net_change": 0.0
   }
 }
 ```
@@ -837,7 +902,10 @@ The architecture should leave room for:
 - drones;
 - future aircraft.
 
-Vehicle purchase prices are decided: **£50 per bicycle, £500 per car** (integer pence on the wire). Operating/fuel/maintenance costs are M3 scope (§16.7).
+Vehicle purchase prices are decided: **£50 per bicycle, £500 per car** (integer pence on the wire). Operating costs are decided (M3, §16.7):
+
+- **fuel**: **150p per completed car run**, bicycles cost 0 (human-powered). Posted as a `vehicle_fuel` transaction at delivery completion, for the mode the run used.
+- **maintenance**: charged together with Friday rent for every **owned** vehicle — **100p per bicycle, 500p per car per week** — posted as `vehicle_maintenance` transactions.
 
 For MVP Slice 1, no purchased vehicle is necessary because the employee walks.
 
@@ -985,7 +1053,8 @@ Invalid rule checks or state transitions should return machine-readable errors a
     "paused": false,
     "office_open": true,
     "days_until_next_payroll": 4,
-    "days_until_next_rent": 0
+    "days_until_next_rent": 0,
+    "days_until_next_interest": 28
   }
 }
 ```
@@ -1082,6 +1151,14 @@ On 2026-09-29 the board decided all twelve items that were previously open. Each
 12. Exact package-generation tick boundary semantics → **fixed 30-minute cursor = exactly 2 packages per open working hour**, deterministic.
 
 **Resolved (M2 board decision):** the monetary unit is integer pence globally (no whole-pound rounding, no floating point); percentage results round half away from zero to whole pence; the car wage is exactly 250p/package. This supersedes any earlier "integer pounds" wording.
+
+**M3 decisions (2026-10-01):** the items that were deferred to M3 above are now decided and implemented; this block supersedes the "M3 scope" notes in items 5, 7, 8 and 9:
+
+13. Per-mode delivery cycle durations → **1 game hour packing for all modes; out-phase foot 3h, bicycle 1.5h, car 1h** (§9.1). Speed traits are applied as **speed multipliers on the out-phase** (out duration = base ÷ modifier; Snail lengthens, Cheetah shortens) (§16.5).
+14. Vehicle operating costs → fuel **150p per completed car run, 0 for bicycles** (`vehicle_fuel`); maintenance with Friday rent per owned vehicle **100p/bicycle, 500p/car per week** (`vehicle_maintenance`) (§12, §16.7).
+15. Employee mood/retention → mood **0–100 starting at 100**; payroll that leaves cash negative **−25**, otherwise **+5** (capped at 100); after each payroll a **ready** employee at mood **≤ 30** has a **20% chance to quit** (mid-run employees check next payroll) (§10, §16.8).
+16. Office upgrade → **small → large for £100 (10000p)** while a contract is active; caps switch immediately, large rent applies from the next rent charge (`POST /api/v1/offices/upgrade`) (§4.4). *Note: the approved proposal contained a "£10,000" typo; the board corrected it to £100, the down-payment difference.*
+17. Voluntary loan repayment → **implemented as decided in item 9**: `POST /api/v1/finance/repay` with `0 < amount ≤ min(cash, principal)`; principal drops, next 5% interest recalculates (§11.1).
 
 Do not allow a coding agent to silently decide new rules permanently. New open questions must be added to this list as **OPEN**, with temporary implementation assumptions clearly labelled and isolated in configuration, and resolved here together with their code change.
 

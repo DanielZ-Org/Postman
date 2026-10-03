@@ -761,6 +761,28 @@
   font-size: 0.92rem;
 }
 
+/* Right-hand group of a finance row: amount plus optional share/week-over-week delta */
+.finance-row-values {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.finance-share,
+.finance-delta {
+  font-size: 0.85em;
+}
+
+.finance-delta {
+  min-width: 68px;
+  text-align: right;
+}
+
+.finance-share {
+  min-width: 36px;
+  text-align: right;
+}
+
 .finance-net {
   border-top-width: 2px;
 }

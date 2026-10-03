@@ -46,7 +46,7 @@ interface Emp {
   name: string
   speed_trait: 'snail' | 'chicken' | 'cheetah'
   skills: string[]
-  mood: 'happy' | 'neutral' | 'unhappy'
+  mood: number
   current_delivery_mode: 'foot'
   packages_delivered_this_week: number
   accrued_wages: number
@@ -360,8 +360,18 @@ function settlePayroll(state: MockState, atMs: number): void {
   const total = state.employees.reduce((sum, e) => sum + e.accrued_wages, 0)
   if (total > 0) {
     addTxn(state, 'employee_wages', -total, 'Tuesday payroll', null, atMs)
-    for (const e of state.employees) e.accrued_wages = 0
   }
+  // Mood settles with the payroll (SPEC 10, decided 16.15): +5, or -25 when the
+  // payroll left cash negative; afterwards each ready employee at or below 30 rolls a
+  // 20% chance to quit (mid-run employees wait for the next payroll).
+  const delta = state.cash < 0 ? -25 : 5
+  for (const e of state.employees) {
+    e.mood = Math.min(100, Math.max(0, e.mood + delta))
+    e.accrued_wages = 0
+  }
+  state.employees = state.employees.filter(
+    (e) => !(e.status === 'ready' && e.mood <= 30 && Math.random() < 0.2),
+  )
 }
 
 function chargeRent(state: MockState, atMs: number): void {
@@ -608,6 +618,13 @@ function clockResponse(state: MockState, nowMs: number) {
     const nowDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
     daysRent = Math.max(0, Math.round((dueDay - nowDay) / 86_400_000))
   }
+  const dueInterest = state.interestDueMs
+  const interestDueDay = Date.UTC(
+    new Date(dueInterest).getUTCFullYear(),
+    new Date(dueInterest).getUTCMonth(),
+    new Date(dueInterest).getUTCDate(),
+  )
+  const interestNowDay = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate())
   return {
     game_datetime: isoFromMs(now),
     day_of_week: DOW_NAMES[dowIndex(now)],
@@ -616,16 +633,15 @@ function clockResponse(state: MockState, nowMs: number) {
     office_open: isOpenAt(now),
     days_until_next_payroll: daysPayroll,
     days_until_next_rent: daysRent,
+    days_until_next_interest: Math.max(0, Math.round((interestDueDay - interestNowDay) / 86_400_000)),
   }
 }
 
-function financeResponse(state: MockState, nowMs: number) {
-  const weekIndex = Math.floor((nowMs - START_MS) / (7 * 86_400_000))
-  const fromMs = START_MS + weekIndex * 7 * 86_400_000
-  const toMs = fromMs + 7 * 86_400_000 - 1000
-  const fromIso = isoFromMs(fromMs)
-  const toIso = isoFromMs(toMs)
-  const inPeriod = state.txns.filter((t) => t.game_datetime >= fromIso && t.game_datetime <= toIso)
+// financeTotals buckets the transactions inside the inclusive [fromIso, toIso] window
+// into the SPEC 11.3 income/expense breakdown. Used for the current statement period
+// and the previous-period comparison (issue #27) so both share one aggregation.
+function financeTotals(txns: Txn[], fromIso: string, toIso: string) {
+  const inPeriod = txns.filter((t) => t.game_datetime >= fromIso && t.game_datetime <= toIso)
 
   let packageRevenue = 0
   let traitBonus = 0
@@ -633,6 +649,8 @@ function financeResponse(state: MockState, nowMs: number) {
   let rent = 0
   let interest = 0
   let hiring = 0
+  let vehicleFuel = 0
+  let vehicleMaintenance = 0
   let other = 0
 
   for (const t of inPeriod) {
@@ -647,38 +665,68 @@ function financeResponse(state: MockState, nowMs: number) {
     else if (t.category === 'rent') rent += abs
     else if (t.category === 'loan_interest') interest += abs
     else if (t.category === 'hiring_bonus') hiring += abs
+    else if (t.category === 'vehicle_fuel') vehicleFuel += abs
+    else if (t.category === 'vehicle_maintenance') vehicleMaintenance += abs
     else other += abs
   }
 
   // All monetary values are integer pence (SPEC 4.3); sums stay exact.
   const incomeTotal = packageRevenue + traitBonus
-  const expenseTotal = wages + rent + interest + hiring + other
-  const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
-  const active = state.office && state.office.contract_status === 'active' ? state.office : null
-
+  const expenseTotal = wages + rent + interest + hiring + vehicleFuel + vehicleMaintenance + other
   return {
-    cash_balance: state.cash,
-    period: { from: fromIso, to: toIso },
+    from: fromIso,
+    to: toIso,
     income: { package_revenue: packageRevenue, trait_bonus: traitBonus, total: incomeTotal },
     expenses: {
       employee_wages: wages,
       rent: rent,
       loan_interest: interest,
       hiring: hiring,
+      vehicle_fuel: vehicleFuel,
+      vehicle_maintenance: vehicleMaintenance,
       other: other,
       total: expenseTotal,
     },
     net_change: incomeTotal - expenseTotal,
+  }
+}
+
+function financeResponse(state: MockState, nowMs: number) {
+  const weekIndex = Math.floor((nowMs - START_MS) / (7 * 86_400_000))
+  const fromMs = START_MS + weekIndex * 7 * 86_400_000
+  const toMs = fromMs + 7 * 86_400_000 - 1000
+  const current = financeTotals(state.txns, isoFromMs(fromMs), isoFromMs(toMs))
+  const previous = financeTotals(state.txns, isoFromMs(fromMs - 7 * 86_400_000), isoFromMs(toMs - 7 * 86_400_000))
+
+  const accrued = state.employees.reduce((s, e) => s + e.accrued_wages, 0)
+  const active = state.office && state.office.contract_status === 'active' ? state.office : null
+
+  return {
+    cash_balance: state.cash,
+    period: { from: current.from, to: current.to },
+    income: current.income,
+    expenses: current.expenses,
+    net_change: current.net_change,
     liabilities: {
       loan_principal: state.loanPrincipal,
       accrued_employee_wages: accrued,
       next_rent_amount: active ? active.weekly_rent : 0,
       next_interest_estimate: Math.round(state.loanPrincipal * 0.05),
     },
+    previous_period: previous,
   }
 }
 
+// upgradeCostPence mirrors SPEC 4.4: 10000 while an active small head office is under
+// contract, 0 otherwise (no office, terminated, already large, game over).
+function upgradeCostPence(state: MockState): number {
+  if (state.status === 'game_over') return 0
+  if (!state.office || state.office.contract_status !== 'active') return 0
+  return state.office.type === 'small' ? 10000 : 0
+}
+
 function officeOffers(state: MockState) {
+  const upgrade = upgradeCostPence(state)
   return OFFERS.map((offer) => {
     const owned = state.office && state.office.id === offer.id ? state.office : null
     return {
@@ -690,6 +738,7 @@ function officeOffers(state: MockState) {
         ...offer.storage,
         used_units: owned ? storageUsed(state) : 0,
       },
+      upgrade_cost_pence: upgrade,
     }
   })
 }
@@ -831,6 +880,55 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       respond(200, gameResponse(state, now0))
       return true
     }
+    // Office upgrade (SPEC 4.4): POST with no body; 10000p small -> large, atomic.
+    if (path === '/api/v1/offices/upgrade') {
+      if (method !== 'POST') {
+        const err = httpError(405, 'METHOD_NOT_ALLOWED', 'method not allowed on this route')
+        respond(err.status, err.body)
+        return true
+      }
+      const body = await readJson(req)
+      for (const key of Object.keys(body)) {
+        const err = httpError(400, 'INVALID_REQUEST', 'offices/upgrade takes no request body', { field: key })
+        respond(err.status, err.body)
+        return true
+      }
+      if (state.status === 'game_over') {
+        const err = httpError(404, 'NO_OFFICE', 'no active head office contract')
+        respond(err.status, err.body)
+        return true
+      }
+      if (!state.office || state.office.contract_status !== 'active') {
+        const err = httpError(404, 'NO_OFFICE', 'no active head office contract')
+        respond(err.status, err.body)
+        return true
+      }
+      if (state.office.type !== 'small') {
+        const err = httpError(409, 'UPGRADE_NOT_AVAILABLE', 'the head office is already the large office')
+        respond(err.status, err.body)
+        return true
+      }
+      const cost = 10000 // down-payment difference 45000 - 35000 (SPEC 4.4)
+      if (state.cash < cost) {
+        const err = httpError(409, 'INSUFFICIENT_FUNDS', 'insufficient cash for the office upgrade', {
+          required: cost,
+          available: state.cash,
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const now = simulate(state)
+      state.office.type = 'large'
+      state.office.base_capacity = 150
+      state.office.current_capacity = 150
+      state.office.maximum_capacity = 250
+      state.office.employee_capacity = 7
+      state.office.vehicle_capacity = 2
+      state.office.weekly_rent = 7500
+      addTxn(state, 'upgrade', -cost, 'Head office upgraded to large', state.office.id, now)
+      respond(200, { office: runtimeOffice(state), cash_balance: state.cash })
+      return true
+    }
     if (method === 'GET' && path === '/api/v1/packages') {
       const now = simulate(state)
       void now
@@ -883,7 +981,7 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
         name: HIRE_NAMES[(state.nextEmp - 1) % HIRE_NAMES.length],
         speed_trait: traitCycle[(state.totalHires - 1) % 3],
         skills: [],
-        mood: 'neutral',
+        mood: 100,
         current_delivery_mode: 'foot',
         packages_delivered_this_week: 0,
         accrued_wages: 0,
@@ -988,6 +1086,58 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
     if (method === 'GET' && path === '/api/v1/finance/transactions') {
       simulate(state)
       respond(200, { transactions: [...state.txns].reverse() })
+      return true
+    }
+    // Voluntary loan repayment (SPEC 11.1): POST {"amount": pence} with
+    // 0 < amount <= min(cash, principal). Failures leave state untouched.
+    if (path === '/api/v1/finance/repay') {
+      if (method !== 'POST') {
+        const err = httpError(405, 'METHOD_NOT_ALLOWED', 'method not allowed on this route')
+        respond(err.status, err.body)
+        return true
+      }
+      const body = await readJson(req)
+      const amount = body.amount
+      if (state.status === 'game_over') {
+        const err = httpError(409, 'GAME_OVER', 'The game has ended.')
+        respond(err.status, err.body)
+        return true
+      }
+      for (const key of Object.keys(body)) {
+        if (key !== 'amount') {
+          const err = httpError(400, 'INVALID_REQUEST', 'unknown or unexpected field in request', { field: key })
+          respond(err.status, err.body)
+          return true
+        }
+      }
+      if (typeof amount !== 'number' || !Number.isInteger(amount)) {
+        const err = httpError(400, 'INVALID_REQUEST', "field 'amount' must be an integer", { field: 'amount' })
+        respond(err.status, err.body)
+        return true
+      }
+      if (amount <= 0) {
+        const err = httpError(400, 'INVALID_REQUEST', 'repayment amount must be a positive integer', {
+          field: 'amount',
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const available = Math.min(state.cash, state.loanPrincipal)
+      if (amount > available) {
+        const err = httpError(409, 'INSUFFICIENT_FUNDS', 'repayment exceeds cash or loan principal', {
+          required: amount,
+          available,
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const now = simulate(state)
+      state.loanPrincipal -= amount
+      addTxn(state, 'loan_repayment', -amount, 'Voluntary loan repayment', 'loan-1', now)
+      respond(200, {
+        player: { id: 'player-1', cash: state.cash, trait: state.trait, loan_principal: state.loanPrincipal },
+        repaid_amount: amount,
+      })
       return true
     }
 

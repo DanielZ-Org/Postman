@@ -4,7 +4,6 @@ export type DestinationType = 'local' | 'far'
 export type PackageStatus = 'stored' | 'assigned' | 'out_for_delivery' | 'delivered'
 export type EmployeeStatus = 'ready' | 'packing' | 'out_for_delivery'
 export type SpeedTrait = 'snail' | 'chicken' | 'cheetah'
-export type Mood = 'happy' | 'neutral' | 'unhappy'
 export type DeliveryMode = 'foot' | 'bicycle' | 'car'
 export type PlayerTrait = 'financial' | 'storage' | 'logistics'
 export type OfficeType = 'small' | 'large'
@@ -18,6 +17,7 @@ export interface ClockState {
   office_open: boolean
   days_until_next_payroll: number
   days_until_next_rent: number
+  days_until_next_interest: number
 }
 
 export interface Player {
@@ -66,6 +66,9 @@ export interface OfficeOffer {
   bicycle_capacity: number
   vehicle_capacity: number
   accepted_package_sizes: PackageSize[] | string[]
+  // SPEC 4.4: 10000 while the active office is small, 0 otherwise — same value on
+  // every catalogue entry.
+  upgrade_cost_pence: number
 }
 
 export interface SelectOfficeResult {
@@ -95,7 +98,7 @@ export interface Employee {
   name: string
   speed_trait: SpeedTrait | string
   skills: string[]
-  mood: Mood | string
+  mood: number
   current_delivery_mode: DeliveryMode | string
   packages_delivered_this_week: number
   accrued_wages: number
@@ -126,6 +129,8 @@ export interface FinanceStatement {
     rent: number
     loan_interest: number
     hiring: number
+    vehicle_fuel: number
+    vehicle_maintenance: number
     other: number
     total: number
   }
@@ -135,6 +140,26 @@ export interface FinanceStatement {
     accrued_employee_wages: number
     next_rent_amount: number
     next_interest_estimate: number
+  }
+  previous_period: {
+    from: string
+    to: string
+    income: {
+      package_revenue: number
+      trait_bonus: number
+      total: number
+    }
+    expenses: {
+      employee_wages: number
+      rent: number
+      loan_interest: number
+      hiring: number
+      vehicle_fuel: number
+      vehicle_maintenance: number
+      other: number
+      total: number
+    }
+    net_change: number
   }
 }
 

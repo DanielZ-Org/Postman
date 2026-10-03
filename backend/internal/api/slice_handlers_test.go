@@ -391,6 +391,22 @@ func TestGetFinanceStatementIsBare(t *testing.T) {
 	if _, present := body["net_change"]; !present {
 		t.Errorf("statement missing net_change: %v", body)
 	}
+	prev, _ := body["previous_period"].(map[string]any)
+	if prev == nil {
+		t.Fatalf("statement missing previous_period: %v", body)
+	}
+	if prev["from"] != "1980-01-25T00:00:00" || prev["to"] != "1980-01-31T23:59:59" {
+		t.Errorf("previous_period window = %v..%v, want the week before the canonical start",
+			prev["from"], prev["to"])
+	}
+	prevInc, _ := prev["income"].(map[string]any)
+	prevExp, _ := prev["expenses"].(map[string]any)
+	if prevInc == nil || prevExp == nil {
+		t.Fatalf("previous_period sections = income %v expenses %v", prev["income"], prev["expenses"])
+	}
+	if prev["net_change"] != float64(0) {
+		t.Errorf("previous_period.net_change = %v, want 0 for a fresh game", prev["net_change"])
+	}
 }
 
 func TestGetFinanceTransactionsNewestFirst(t *testing.T) {
@@ -533,9 +549,10 @@ func TestFullSliceSelectHireGenerateAssignDeliver(t *testing.T) {
 		t.Fatalf("assigned = %v, want 1", assigned)
 	}
 
-	// 5. Advance four game hours (120 real seconds at speed 1): packing ends 10:30,
-	//    delivery ends 13:30 -> package delivered, revenue posted, employee ready.
-	advanceGame(state, 120*time.Second)
+	// 5. Advance five game hours (150 real seconds at speed 1): packing ends 10:30,
+	//    the snail out-phase (225 min, SPEC 16.5) ends 14:15 -> package delivered,
+	//    revenue posted, employee ready.
+	advanceGame(state, 150*time.Second)
 
 	rec = doRequest(t, h, http.MethodGet, "/api/v1/packages", "")
 	pkgs = decodeJSON(t, rec.Body.Bytes())["packages"].([]any)

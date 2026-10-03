@@ -1,6 +1,14 @@
 import type { GameApi } from '../hooks/useGame'
 import { formatMoney, formatStatus } from '../lib/format'
 
+// Mood colour bands: 31-60 is the neutral middle; at 30 or below an employee is at the
+// quit threshold (SPEC 10), so the chip turns negative there and above 60 turns positive.
+function moodBand(mood: number): 'happy' | 'neutral' | 'unhappy' {
+  if (mood > 60) return 'happy'
+  if (mood > 30) return 'neutral'
+  return 'unhappy'
+}
+
 export function EmployeesPanel({ game }: { game: GameApi }) {
   const office = game.state?.office
   const hiring = game.hiring
@@ -67,7 +75,7 @@ export function EmployeesPanel({ game }: { game: GameApi }) {
                   </td>
                   <td>{emp.skills.length > 0 ? emp.skills.join(', ') : '—'}</td>
                   <td>
-                    <span className={`mood-chip mood-${emp.mood}`}>{emp.mood}</span>
+                    <span className={`mood-chip mood-${moodBand(emp.mood)}`}>{emp.mood}%</span>
                   </td>
                   <td>{emp.current_delivery_mode}</td>
                   <td>

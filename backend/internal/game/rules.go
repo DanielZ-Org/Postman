@@ -31,15 +31,69 @@ const expressChancePercent = 3
 // packages generate (SPEC 6).
 const expressFreeDuration = 28 * 24 * time.Hour
 
-// Delivery-run geometry (SPEC 9.1): a walking cycle is 1 game hour of packing followed
-// by 3 game hours out for delivery. Bicycle and car reuse this same geometry as a
-// labelled temporary assumption until SPEC defines per-mode timing (SPEC 9.1: bicycle
-// and car timing "can be defined separately later without changing this model").
-const (
-	packingDuration    = time.Hour
-	deliveryDuration   = 3 * time.Hour
-	assignmentDuration = packingDuration + deliveryDuration
-)
+// Delivery-run geometry (SPEC 9.1, decided 16.13): every mode packs for 1 game hour,
+// then is out for delivery for a mode-specific base duration — foot 3h (180m),
+// bicycle 1.5h (90m), car 1h (60m) — which matches the runs-per-day budgets of
+// SPEC 9.3 (foot 2×4h, bicycle 3×2.5h, car 2×2h within the weekday).
+const packingDuration = time.Hour
+
+// outPhaseBaseMinutes returns the mode's base out-for-delivery duration in whole game
+// minutes (SPEC 9.1 table).
+func outPhaseBaseMinutes(mode string) int {
+	switch mode {
+	case ModeBicycle:
+		return 90
+	case ModeCar:
+		return 60
+	default: // foot
+		return 180
+	}
+}
+
+// speedTraitRatio returns the speed-trait multiplier as an exact rational num/den
+// (SPEC 16.5): snail 0.8 = 4/5, chicken 1.0, cheetah 1.2 = 6/5. Integer arithmetic
+// keeps durations exact — no floating point anywhere in the timing path.
+func speedTraitRatio(trait string) (num, den int) {
+	switch trait {
+	case "snail":
+		return 4, 5
+	case "cheetah":
+		return 6, 5
+	default: // chicken or unknown
+		return 1, 1
+	}
+}
+
+// roundHalfAwayDiv rounds n/d half away from zero with integer math, matching the
+// SPEC 4.3 percentage rule.
+func roundHalfAwayDiv(n, d int) int {
+	if d < 0 {
+		n, d = -n, -d
+	}
+	if n >= 0 {
+		return (n + d/2) / d
+	}
+	return (n - d/2) / d
+}
+
+// outPhaseMinutes returns the trait-adjusted out-for-delivery duration in whole game
+// minutes: base ÷ speed modifier, rounded half away from zero (SPEC 9.1/16.5). Snail
+// lengthens the phase (bicycle 90 → 113), Cheetah shortens it (bicycle 90 → 75).
+func outPhaseMinutes(mode, trait string) int {
+	num, den := speedTraitRatio(trait)
+	return roundHalfAwayDiv(outPhaseBaseMinutes(mode)*den, num)
+}
+
+// cycleMinutes is packing plus the trait-adjusted out phase (SPEC 9.1).
+func cycleMinutes(mode, trait string) int {
+	return 60 + outPhaseMinutes(mode, trait)
+}
+
+// cycleDuration is the full cycle length used by the closing-time validation when a
+// batch is assigned (SPEC 9.1).
+func cycleDuration(mode, trait string) time.Duration {
+	return time.Duration(cycleMinutes(mode, trait)) * time.Minute
+}
 
 // Delivery capacities per mode (SPEC 9.2): foot 10, bicycle 20, car 50 units per run.
 // Normal packages consume 1 unit, express 2 — the same consumption in every mode.
@@ -138,10 +192,15 @@ const (
 )
 
 // Vehicle purchase prices (SPEC 12, decided 16.7): £50 per bicycle, £500 per car,
-// integer pence. Operating/fuel/maintenance costs are M3 scope.
+// integer pence. Running costs (decided 16.7, M3): fuel 150p per completed car run;
+// maintenance every Friday per owned vehicle, 100p per bicycle and 500p per car.
 const (
 	bicyclePurchasePrice = 5000  // £50
 	carPurchasePrice     = 50000 // £500
+
+	carFuelPerRun            = 150 // £1.50 per completed car run; bicycle and foot cost no fuel
+	bicycleMaintenanceWeekly = 100 // £1 per owned bicycle, charged every Friday
+	carMaintenanceWeekly     = 500 // £5 per owned car, charged every Friday
 )
 
 // Hire-time skill distribution (SPEC 7.2): the player may hire employees who already
@@ -165,6 +224,31 @@ const (
 	maxMissedRentPayments = 2
 	loanReferenceID       = "loan-1"
 )
+
+// Employee mood and retention (SPEC 10, decided 16.15): mood runs 0-100 starting at
+// 100. Tuesday payroll moves every employee's mood: +5 when the payroll left cash
+// non-negative, -25 when it left cash negative (floored at 0; +5 capped at 100).
+// After the update each ready employee at or below the quit threshold rolls a 20%
+// chance to leave; mid-run employees are skipped and re-checked next payroll.
+const (
+	moodInitial           = 100
+	moodMax               = 100
+	moodPayrollUp         = 5
+	moodPayrollDown       = 25
+	moodQuitThreshold     = 30
+	moodQuitChancePercent = 20
+)
+
+// clampMood keeps a mood movement inside the 0..moodMax range.
+func clampMood(mood int) int {
+	if mood < 0 {
+		return 0
+	}
+	if mood > moodMax {
+		return moodMax
+	}
+	return mood
+}
 
 // Rent misses (SPEC 4.2, decided 16.10): the first missed payment adds a one-off 20%
 // late fee deducted regardless of cash (cash may go negative); the fee does not

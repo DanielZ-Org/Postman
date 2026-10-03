@@ -18,13 +18,14 @@ import (
 // mutation-response DTO shapes are introduced.
 type clockResponse struct {
 	Clock struct {
-		GameDatetime         string `json:"game_datetime"`
-		DayOfWeek            string `json:"day_of_week"`
-		Speed                int    `json:"speed"`
-		Paused               bool   `json:"paused"`
-		OfficeOpen           bool   `json:"office_open"`
-		DaysUntilNextPayroll int    `json:"days_until_next_payroll"`
-		DaysUntilNextRent    int    `json:"days_until_next_rent"`
+		GameDatetime          string `json:"game_datetime"`
+		DayOfWeek             string `json:"day_of_week"`
+		Speed                 int    `json:"speed"`
+		Paused                bool   `json:"paused"`
+		OfficeOpen            bool   `json:"office_open"`
+		DaysUntilNextPayroll  int    `json:"days_until_next_payroll"`
+		DaysUntilNextRent     int    `json:"days_until_next_rent"`
+		DaysUntilNextInterest int    `json:"days_until_next_interest"`
 	} `json:"clock"`
 }
 
@@ -174,10 +175,14 @@ func (h *clockHandler) handleSkip(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeClock writes the updated clock snapshot under the canonical "clock" wrapper with HTTP 200.
+// The interest countdown comes from game state (not the clock snapshot), so every clock
+// endpoint response — GET and all mutations — gains it here in one place (issue #27).
 func (h *clockHandler) writeClock(w http.ResponseWriter, snap game.ClockSnapshot) {
+	resp := clockResponseFrom(snap)
+	resp.Clock.DaysUntilNextInterest = h.state.DaysUntilNextInterest()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(clockResponseFrom(snap))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // clockResponseFrom maps a read-only snapshot to the wire shape.

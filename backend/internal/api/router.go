@@ -43,6 +43,7 @@ func NewRouter(state *game.GameState) http.Handler {
 	oh := newOfficeHandler(state)
 	v1.HandleFunc("/offices", oh.handleList)
 	v1.HandleFunc("/offices/select", oh.handleSelect)
+	v1.HandleFunc("/offices/upgrade", oh.handleUpgrade)
 
 	// Packages, employees/hiring, delivery assignment (SPEC 5-9).
 	ph := newPackageHandler(state)
@@ -61,10 +62,11 @@ func NewRouter(state *game.GameState) http.Handler {
 	v1.HandleFunc("/vehicles/purchase", vh.handlePurchase)
 	v1.HandleFunc("/employees/", eh.handleModePath)
 
-	// Finance statement and transaction history (SPEC 11).
+	// Finance statement, transaction history and voluntary loan repayment (SPEC 11).
 	fh := newFinanceHandler(state)
 	v1.HandleFunc("/finance", fh.handleStatement)
 	v1.HandleFunc("/finance/transactions", fh.handleTransactions)
+	v1.HandleFunc("/finance/repay", fh.handleRepay)
 
 	mux.Handle("/api/v1/", http.StripPrefix("/api/v1", v1))
 

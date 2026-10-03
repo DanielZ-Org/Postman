@@ -1,6 +1,9 @@
 package game
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // Transaction is the SPEC 11.3 finance record: every monetary mutation appends one
 // instead of silently changing cash. Amounts are signed integer pence (negative =
@@ -17,16 +20,20 @@ type Transaction struct {
 
 // Finance categories (SPEC 11.3).
 const (
-	CategoryLoanDisbursement  = "loan_disbursement"
-	CategoryPackageRevenue    = "package_revenue"
-	CategoryTraitBonus        = "financial_trait_bonus"
-	CategoryOfficeDownPayment = "office_down_payment"
-	CategoryRent              = "rent"
-	CategoryRentLateFee       = "rent_late_fee"
-	CategoryHiringBonus       = "hiring_bonus"
-	CategoryEmployeeWages     = "employee_wages"
-	CategoryLoanInterest      = "loan_interest"
-	CategoryVehiclePurchase   = "vehicle_purchase"
+	CategoryLoanDisbursement   = "loan_disbursement"
+	CategoryPackageRevenue     = "package_revenue"
+	CategoryTraitBonus         = "financial_trait_bonus"
+	CategoryOfficeDownPayment  = "office_down_payment"
+	CategoryRent               = "rent"
+	CategoryRentLateFee        = "rent_late_fee"
+	CategoryHiringBonus        = "hiring_bonus"
+	CategoryEmployeeWages      = "employee_wages"
+	CategoryLoanInterest       = "loan_interest"
+	CategoryLoanRepayment      = "loan_repayment"
+	CategoryVehiclePurchase    = "vehicle_purchase"
+	CategoryVehicleFuel        = "vehicle_fuel"
+	CategoryVehicleMaintenance = "vehicle_maintenance"
+	CategoryUpgrade            = "upgrade"
 )
 
 // postTransactionLocked applies a money mutation: adjusts cash by amount and appends
@@ -93,15 +100,17 @@ func itoa(n int) string {
 }
 
 // FinanceStatement is the SPEC 11.3 statement view for GET /api/v1/finance: current
-// balance plus an income/expense breakdown for one game week and the liability
-// overview. All amounts are integer pence.
+// balance plus an income/expense breakdown for one game week, the liability overview,
+// and the previous week's totals for the week-over-week comparison (issue #27). All
+// amounts are integer pence.
 type FinanceStatement struct {
-	CashBalance int            `json:"cash_balance"`
-	Period      FinancePeriod  `json:"period"`
-	Income      FinanceIncome  `json:"income"`
-	Expenses    FinanceExpense `json:"expenses"`
-	NetChange   int            `json:"net_change"`
-	Liabilities FinanceLiabs   `json:"liabilities"`
+	CashBalance    int                 `json:"cash_balance"`
+	Period         FinancePeriod       `json:"period"`
+	Income         FinanceIncome       `json:"income"`
+	Expenses       FinanceExpense      `json:"expenses"`
+	NetChange      int                 `json:"net_change"`
+	Liabilities    FinanceLiabs        `json:"liabilities"`
+	PreviousPeriod FinancePeriodTotals `json:"previous_period"`
 }
 
 // FinancePeriod is the inclusive [from, to] game-time window of a statement.
@@ -119,12 +128,14 @@ type FinanceIncome struct {
 
 // FinanceExpense aggregates expense categories for the period (SPEC 11.3).
 type FinanceExpense struct {
-	EmployeeWages int `json:"employee_wages"`
-	Rent          int `json:"rent"`
-	LoanInterest  int `json:"loan_interest"`
-	Hiring        int `json:"hiring"`
-	Other         int `json:"other"`
-	Total         int `json:"total"`
+	EmployeeWages      int `json:"employee_wages"`
+	Rent               int `json:"rent"`
+	LoanInterest       int `json:"loan_interest"`
+	Hiring             int `json:"hiring"`
+	VehicleFuel        int `json:"vehicle_fuel"`
+	VehicleMaintenance int `json:"vehicle_maintenance"`
+	Other              int `json:"other"`
+	Total              int `json:"total"`
 }
 
 // FinanceLiabs lists outstanding obligations (SPEC 11.3). NextInterestEstimate is 5%
@@ -137,24 +148,26 @@ type FinanceLiabs struct {
 	NextInterestEstimate int `json:"next_interest_estimate"`
 }
 
-// financeStatementLocked builds the statement for the game week containing now. The
-// period runs from the canonical start (SPEC 2.1) in 7-day windows: week 0 is
-// 1980-02-01T00:00:00 to 1980-02-07T23:59:59, matching the SPEC 11.3 example. Callers
-// must hold s.mu.
-func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
-	week := 0
-	if now.After(startTime) {
-		week = int(now.Sub(startTime) / (7 * 24 * time.Hour))
-	}
-	fromBase := startTime.AddDate(0, 0, week*7)
-	from := time.Date(fromBase.Year(), fromBase.Month(), fromBase.Day(), 0, 0, 0, 0, fromBase.Location())
-	to := from.Add(7*24*time.Hour - time.Second)
-	fromStr := from.Format(GameTimeFormat)
-	toStr := to.Format(GameTimeFormat)
+// FinancePeriodTotals is the income/expense/net breakdown for one statement window
+// without the balance or liability context. It backs previous_period: the same
+// aggregation for the immediately preceding week so the finance UI can show a
+// week-over-week comparison without re-bucketing transactions client-side (issue #27).
+type FinancePeriodTotals struct {
+	From      string         `json:"from"`
+	To        string         `json:"to"`
+	Income    FinanceIncome  `json:"income"`
+	Expenses  FinanceExpense `json:"expenses"`
+	NetChange int            `json:"net_change"`
+}
 
+// accumulateFinancePeriod buckets every transaction whose game datetime falls in the
+// inclusive [fromStr, toStr] window into the SPEC 11.3 income/expense totals. Positive
+// amounts outside the income categories and non-transaction cash movements do not
+// appear; every other negative amount lands in expenses' default "other" bucket.
+func accumulateFinancePeriod(transactions []Transaction, fromStr, toStr string) (FinanceIncome, FinanceExpense) {
 	var inc FinanceIncome
 	var exp FinanceExpense
-	for _, t := range s.transactions {
+	for _, t := range transactions {
 		if t.GameDatetime < fromStr || t.GameDatetime > toStr {
 			continue
 		}
@@ -174,13 +187,38 @@ func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
 				exp.LoanInterest += abs
 			case CategoryHiringBonus:
 				exp.Hiring += abs
+			case CategoryVehicleFuel:
+				exp.VehicleFuel += abs
+			case CategoryVehicleMaintenance:
+				exp.VehicleMaintenance += abs
 			default:
 				exp.Other += abs
 			}
 		}
 	}
 	inc.Total = inc.PackageRevenue + inc.TraitBonus
-	exp.Total = exp.EmployeeWages + exp.Rent + exp.LoanInterest + exp.Hiring + exp.Other
+	exp.Total = exp.EmployeeWages + exp.Rent + exp.LoanInterest + exp.Hiring +
+		exp.VehicleFuel + exp.VehicleMaintenance + exp.Other
+	return inc, exp
+}
+
+// financeStatementLocked builds the statement for the game week containing now. The
+// period runs from the canonical start (SPEC 2.1) in 7-day windows: week 0 is
+// 1980-02-01T00:00:00 to 1980-02-07T23:59:59, matching the SPEC 11.3 example. The
+// previous period is the identical window shifted back 7 days — before the canonical
+// start it is a zero-activity window on the same weekly grid. Callers must hold s.mu.
+func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
+	week := 0
+	if now.After(startTime) {
+		week = int(now.Sub(startTime) / (7 * 24 * time.Hour))
+	}
+	fromBase := startTime.AddDate(0, 0, week*7)
+	from := time.Date(fromBase.Year(), fromBase.Month(), fromBase.Day(), 0, 0, 0, 0, fromBase.Location())
+	to := from.Add(7*24*time.Hour - time.Second)
+	fromStr := from.Format(GameTimeFormat)
+	toStr := to.Format(GameTimeFormat)
+
+	inc, exp := accumulateFinancePeriod(s.transactions, fromStr, toStr)
 
 	var accruedWages int
 	for _, e := range s.employees {
@@ -190,6 +228,10 @@ func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
 	if s.selectedOffice != nil && s.selectedOffice.ContractStatus == ContractActive {
 		nextRent = s.selectedOffice.WeeklyRent
 	}
+
+	prevFrom := from.AddDate(0, 0, -7)
+	prevTo := prevFrom.Add(7*24*time.Hour - time.Second)
+	pinc, pexp := accumulateFinancePeriod(s.transactions, prevFrom.Format(GameTimeFormat), prevTo.Format(GameTimeFormat))
 
 	return FinanceStatement{
 		CashBalance: s.cash,
@@ -203,5 +245,44 @@ func (s *GameState) financeStatementLocked(now time.Time) FinanceStatement {
 			NextRentAmount:       nextRent,
 			NextInterestEstimate: percentOf(s.player.LoanPrincipal, interestPercent),
 		},
+		PreviousPeriod: FinancePeriodTotals{
+			From:      prevFrom.Format(GameTimeFormat),
+			To:        prevTo.Format(GameTimeFormat),
+			Income:    pinc,
+			Expenses:  pexp,
+			NetChange: pinc.Total - pexp.Total,
+		},
 	}
+}
+
+// ErrInvalidRepayment reports a repayment amount outside the SPEC 11.1 contract
+// (amount must be a positive integer): INVALID_REQUEST 400 at the API boundary.
+var ErrInvalidRepayment = errors.New("repayment amount must be a positive integer")
+
+// RepayLoan validates and commits one voluntary loan repayment under s.mu (SPEC 11.1,
+// decided 16.9/16.17): the amount must satisfy 0 < amount <= min(cash, principal). On
+// success the principal drops by the amount and exactly one loan_repayment transaction
+// posts for the paid amount; the next 5% interest charge recalculates from the new
+// principal. Every failure (game over, invalid amount, unaffordable) leaves state
+// unchanged.
+func (s *GameState) RepayLoan(amount int) (PlayerView, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.status == GameStatusGameOver {
+		return PlayerView{}, ErrGameOver
+	}
+	if amount <= 0 {
+		return PlayerView{}, ErrInvalidRepayment
+	}
+	available := s.cash
+	if s.player.LoanPrincipal < available {
+		available = s.player.LoanPrincipal
+	}
+	if amount > available {
+		return PlayerView{}, &InsufficientFundsError{Required: amount, Available: available}
+	}
+	s.player.LoanPrincipal -= amount
+	s.postTransactionLocked(s.Clock.Now(), CategoryLoanRepayment, -amount, "Voluntary loan repayment", loanReferenceID)
+	return s.playerViewLocked(), nil
 }

@@ -238,3 +238,128 @@ func TestVehicleInventoryAndModesPersistRoundTrip(t *testing.T) {
 		t.Errorf("second snapshot inventory = %d/%d, want 2/1", again.BicyclesOwned, again.CarsOwned)
 	}
 }
+
+// countTransactions returns how many transactions match category.
+func countTransactions(s *GameState, category string) int {
+	n := 0
+	for _, tr := range s.transactions {
+		if tr.Category == category {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCarRunChargesFuelOnCompletion verifies the M3 fuel cost (SPEC 12, decided
+// SPEC 16.7): every completed car run posts exactly one 150p vehicle_fuel expense at
+// the delivery-completion instant, and the finance statement reports it in its own
+// expense row.
+func TestCarRunChargesFuelOnCompletion(t *testing.T) {
+	s, carEmp := newCarModeState(t)
+	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T09:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	if _, _, err := s.AssignDelivery(carEmp, 1); err != nil {
+		t.Fatalf("AssignDelivery: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T10:50:00")) // car out-phase: 60m base, cheetah 6/5 -> 50m
+
+	if got := countTransactions(s, CategoryVehicleFuel); got != 1 {
+		t.Fatalf("vehicle_fuel transactions = %d, want 1 (one per completed car run)", got)
+	}
+	tr := s.transactions[len(s.transactions)-1]
+	if tr.Category != CategoryVehicleFuel || tr.Amount != -carFuelPerRun || tr.GameDatetime != "1980-02-01T10:50:00" {
+		t.Errorf("fuel txn = %+v, want vehicle_fuel %d at completion", tr, -carFuelPerRun)
+	}
+
+	st := s.financeStatementLocked(mustParseTime(t, "1980-02-01T10:50:00"))
+	if st.Expenses.VehicleFuel != carFuelPerRun {
+		t.Errorf("statement vehicle_fuel = %d, want %d", st.Expenses.VehicleFuel, carFuelPerRun)
+	}
+	// Other holds only the office down payment: fuel must not leak into the catch-all.
+	if st.Expenses.Other != 35000 {
+		t.Errorf("statement other = %d, want 35000 (down payment only; fuel has its own row)", st.Expenses.Other)
+	}
+}
+
+// TestBicycleRunChargesNoFuel verifies fuel is car-specific: a completed bicycle run
+// posts no vehicle_fuel transaction (SPEC 12, decided SPEC 16.7).
+func TestBicycleRunChargesNoFuel(t *testing.T) {
+	s, bikeEmp := newBicycleModeState(t)
+	addStoredPackage(s, "pkg-000001", "small", ServiceNormal, mustParseTime(t, "1980-02-01T09:00:00"), mustParseTime(t, "1980-02-06T09:00:00"))
+	if _, _, err := s.AssignDelivery(bikeEmp, 1); err != nil {
+		t.Fatalf("AssignDelivery: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T10:00:00")) // packing ends
+	s.processLocked(mustParseTime(t, "1980-02-01T11:30:00")) // bicycle out-phase ends (chicken: 90m)
+
+	if got := countTransactions(s, CategoryVehicleFuel); got != 0 {
+		t.Errorf("vehicle_fuel transactions = %d, want 0 (bicycle costs no fuel)", got)
+	}
+	if s.employees[1].Status != EmployeeReady {
+		t.Errorf("employee status = %s, want ready after completion", s.employees[1].Status)
+	}
+}
+
+// TestFridayVehicleMaintenanceChargesOwnedVehicles verifies weekly upkeep (SPEC 12,
+// decided SPEC 16.7): the first Friday processing posts one vehicle_maintenance charge
+// for every owned vehicle (100p bicycle + 500p car), stamps it Friday midnight, and
+// deduplicates for the rest of that Friday; the next Friday charges again.
+func TestFridayVehicleMaintenanceChargesOwnedVehicles(t *testing.T) {
+	s := newAssignedOfficeState(t) // Friday 1980-02-01 09:00
+	s.cash = 100000                // isolate upkeep from affordability
+	if _, err := s.PurchaseVehicle("bicycle"); err != nil {
+		t.Fatalf("bicycle: %v", err)
+	}
+	if _, err := s.PurchaseVehicle("car"); err != nil {
+		t.Fatalf("car: %v", err)
+	}
+
+	s.processLocked(mustParseTime(t, "1980-02-01T09:00:01"))
+	if got := countTransactions(s, CategoryVehicleMaintenance); got != 1 {
+		t.Fatalf("first-Friday maintenance transactions = %d, want 1", got)
+	}
+	tr := s.transactions[len(s.transactions)-1]
+	if tr.Amount != -(bicycleMaintenanceWeekly+carMaintenanceWeekly) || tr.GameDatetime != "1980-02-01T00:00:00" {
+		t.Errorf("maintenance txn = %+v, want -600 at 1980-02-01T00:00:00", tr)
+	}
+
+	// Same Friday again: deduplicated.
+	s.processLocked(mustParseTime(t, "1980-02-01T16:00:00"))
+	if got := countTransactions(s, CategoryVehicleMaintenance); got != 1 {
+		t.Errorf("maintenance transactions after same-Friday reprocess = %d, want 1", got)
+	}
+
+	// Next Friday charges once more.
+	s.processLocked(mustParseTime(t, "1980-02-08T10:00:00"))
+	if got := countTransactions(s, CategoryVehicleMaintenance); got != 2 {
+		t.Errorf("maintenance transactions after next Friday = %d, want 2", got)
+	}
+	st := s.financeStatementLocked(mustParseTime(t, "1980-02-08T10:00:00"))
+	if st.Expenses.VehicleMaintenance != bicycleMaintenanceWeekly+carMaintenanceWeekly {
+		t.Errorf("week-1 statement vehicle_maintenance = %d, want 600", st.Expenses.VehicleMaintenance)
+	}
+}
+
+// TestFridayVehicleMaintenanceSkipsWhenNothingOwned verifies a Friday with no owned
+// vehicles posts nothing and only marks the day: buying a vehicle later the same
+// Friday defers upkeep to the next Friday instead of back-charging.
+func TestFridayVehicleMaintenanceSkipsWhenNothingOwned(t *testing.T) {
+	s := newAssignedOfficeState(t) // Friday 1980-02-01 09:00
+	s.cash = 100000
+
+	s.processLocked(mustParseTime(t, "1980-02-01T09:00:01"))
+	if got := countTransactions(s, CategoryVehicleMaintenance); got != 0 {
+		t.Fatalf("maintenance transactions without vehicles = %d, want 0", got)
+	}
+	if s.lastMaintenanceKey != "1980-02-01" {
+		t.Errorf("lastMaintenanceKey = %q, want 1980-02-01 (Friday marked)", s.lastMaintenanceKey)
+	}
+
+	if _, err := s.PurchaseVehicle("bicycle"); err != nil {
+		t.Fatalf("bicycle: %v", err)
+	}
+	s.processLocked(mustParseTime(t, "1980-02-01T15:00:00"))
+	if got := countTransactions(s, CategoryVehicleMaintenance); got != 0 {
+		t.Errorf("maintenance after buying later on the marked Friday = %d, want 0 (deferred)", got)
+	}
+}

@@ -221,9 +221,10 @@ func TestRunLifecycleDeliversAndAccrues(t *testing.T) {
 		t.Fatalf("active runs = %d, want 1", len(s.runs))
 	}
 
-	// Delivery ends at 13:00: packages deliver, revenue posts, wages accrue.
+	// Delivery ends at 13:45: packages deliver, revenue posts, wages accrue.
+	// Hire #1 is snail, so the foot out-phase is 225 minutes (SPEC 16.5).
 	cashBefore := s.cash
-	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00"))
+	s.processLocked(mustParseTime(t, "1980-02-01T13:45:00"))
 	if len(s.runs) != 0 {
 		t.Fatalf("active runs after completion = %d, want 0", len(s.runs))
 	}
@@ -321,7 +322,7 @@ func TestLateDeliveryPaysReducedRevenue(t *testing.T) {
 		t.Fatalf("AssignDelivery: %v", err)
 	}
 	cashBefore := s.cash
-	s.processLocked(mustParseTime(t, "1980-02-01T13:00:00"))
+	s.processLocked(mustParseTime(t, "1980-02-01T13:45:00")) // snail foot: 10:00 + 225 min
 	// Normal late: 25% reduction -> 500p * 0.75 = exactly 375p (integer pence needs no
 	// whole-pound rounding; SPEC 5.3).
 	if s.cash != cashBefore+375 {

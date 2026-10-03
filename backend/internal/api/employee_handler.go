@@ -24,7 +24,7 @@ type employeeJSON struct {
 	Name                      string   `json:"name"`
 	SpeedTrait                string   `json:"speed_trait"`
 	Skills                    []string `json:"skills"`
-	Mood                      string   `json:"mood"`
+	Mood                      int      `json:"mood"`
 	CurrentDeliveryMode       string   `json:"current_delivery_mode"`
 	PackagesDeliveredThisWeek int      `json:"packages_delivered_this_week"`
 	AccruedWages              int      `json:"accrued_wages"`

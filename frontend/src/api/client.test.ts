@@ -55,6 +55,22 @@ describe('api.getClock', () => {
     expect(clock.speed).toBe(1)
   })
 
+  it('parses days_until_next_interest (issue #27)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, makeClock())))
+    const clock = await api.getClock()
+    expect(clock.days_until_next_interest).toBe(28)
+  })
+
+  it('rejects a clock without days_until_next_interest', async () => {
+    const legacy: Record<string, unknown> = { ...makeClock() }
+    delete legacy.days_until_next_interest
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, legacy)))
+    await expect(api.getClock()).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'UNEXPECTED_RESPONSE',
+    })
+  })
+
   it('throws ApiError when a required field is missing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, { speed: 1 })))
     await expect(api.getClock()).rejects.toMatchObject({
@@ -149,7 +165,9 @@ describe('api.getOffices', () => {
   it('parses offices from {offices:[...]}', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(200, { offices: [makeOffice()] })),
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, { offices: [{ ...makeOffice(), upgrade_cost_pence: 0 }] }),
+      ),
     )
     const offices = await api.getOffices()
     expect(offices).toHaveLength(1)
@@ -174,6 +192,7 @@ describe('api.getOffices', () => {
               bicycle_capacity: 5,
               vehicle_capacity: 1,
               accepted_package_sizes: ['small', 'medium'],
+              upgrade_cost_pence: 0,
             },
           ],
         }),
@@ -330,6 +349,50 @@ describe('api.getFinance / getTransactions', () => {
     expect(finance?.liabilities.next_rent_amount).toBe(5000) // integer pence
   })
 
+  it('parses previous_period totals for the week-over-week comparison (issue #27)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          200,
+          makeFinance({
+            previous_period: {
+              from: '1980-01-25T00:00:00.000Z',
+              to: '1980-01-31T23:59:59.999Z',
+              income: { package_revenue: 1000, trait_bonus: 0, total: 1000 },
+              expenses: {
+                employee_wages: 400,
+                rent: 0,
+                loan_interest: 0,
+                hiring: 0,
+                vehicle_fuel: 100,
+                vehicle_maintenance: 0,
+                other: 0,
+                total: 500,
+              },
+              net_change: 500,
+            },
+          }),
+        ),
+      ),
+    )
+    const finance = await api.getFinance()
+    expect(finance?.previous_period.from).toBe('1980-01-25T00:00:00.000Z')
+    expect(finance?.previous_period.income.package_revenue).toBe(1000)
+    expect(finance?.previous_period.expenses.vehicle_fuel).toBe(100)
+    expect(finance?.previous_period.net_change).toBe(500)
+  })
+
+  it('rejects a statement without previous_period', async () => {
+    const legacy: Record<string, unknown> = { ...makeFinance() }
+    delete legacy.previous_period
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, legacy)))
+    await expect(api.getFinance()).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'UNEXPECTED_RESPONSE',
+    })
+  })
+
   it('returns null when finance route is missing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(404, '404 page not found')))
     await expect(api.getFinance()).resolves.toBeNull()
@@ -370,5 +433,25 @@ describe('mutation bodies', () => {
     await api.selectOffice('large')
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(JSON.parse(String(init.body))).toEqual({ office_id: 'large' })
+  })
+
+  it('POST /finance/repay sends amount in pence', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { repaid_amount: 25000 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.repayLoan(25000)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/finance/repay')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ amount: 25000 })
+  })
+
+  it('POST /offices/upgrade sends an empty object body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { cash_balance: 55000 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.upgradeOffice()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/offices/upgrade')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({})
   })
 })
