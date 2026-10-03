@@ -233,9 +233,12 @@ func (s *GameState) completeRunLocked(run *Run, at time.Time) {
 
 // processPayrollLocked settles due Tuesday payrolls (SPEC 10/11.2): every accrued
 // wage posts as one employee_wages transaction, accrued wages clear and the weekly
-// per-employee delivery counters reset. Missed-payroll consequences are decided
-// (SPEC 16.8): payroll settles unconditionally — cash may go negative, wages are
-// never left unpaid, and there is no additional penalty (mood/retention is M3).
+// per-employee delivery counters reset. Payroll settles unconditionally — cash may go
+// negative and wages are never left unpaid (decided SPEC 16.8). Mood then settles with
+// the payroll (SPEC 10, decided 16.15): +5 for everyone when cash stayed non-negative,
+// −25 when the payroll left cash negative; afterwards each ready employee at or below
+// the quit threshold rolls a 20% chance to leave (mid-run employees wait for the next
+// payroll). Wages already settled are not reversed.
 func (s *GameState) processPayrollLocked(now time.Time) bool {
 	changed := false
 	for !now.Before(s.payrollDue) {
@@ -246,10 +249,25 @@ func (s *GameState) processPayrollLocked(now time.Time) bool {
 		if total > 0 {
 			s.postTransactionLocked(s.payrollDue, CategoryEmployeeWages, -total, "Tuesday payroll", "")
 		}
+		delta := moodPayrollUp
+		if s.cash < 0 {
+			delta = -moodPayrollDown
+		}
 		for _, e := range s.employees {
+			e.Mood = clampMood(e.Mood + delta)
 			e.AccruedWages = 0
 			e.PackagesDeliveredThisWeek = 0
 		}
+		remaining := s.employees[:0]
+		for _, e := range s.employees {
+			quits := e.Status == EmployeeReady && e.Mood <= moodQuitThreshold &&
+				randIntn(100) < moodQuitChancePercent
+			if quits {
+				continue // removed from the roster; already-settled wages stay posted
+			}
+			remaining = append(remaining, e)
+		}
+		s.employees = remaining
 		s.payrollDue = s.payrollDue.AddDate(0, 0, 7)
 		changed = true
 	}

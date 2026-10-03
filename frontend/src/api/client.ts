@@ -386,7 +386,7 @@ function parseEmployee(value: unknown, path: string): Employee {
     name: requireString(o, 'name', path),
     speed_trait: requireString(o, 'speed_trait', path),
     skills: requireStringArray(o, 'skills', path),
-    mood: requireString(o, 'mood', path),
+    mood: requireNumber(o, 'mood', path),
     current_delivery_mode: requireString(o, 'current_delivery_mode', path),
     packages_delivered_this_week: requireNumber(o, 'packages_delivered_this_week', path),
     accrued_wages: requireNumber(o, 'accrued_wages', path),

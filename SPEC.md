@@ -597,7 +597,7 @@ This is an actual per-employee counter, not merely an aggregate company statisti
   "name": "Bob Snail",
   "speed_trait": "snail",
   "skills": [],
-  "mood": "neutral",
+  "mood": 100,
   "current_delivery_mode": "foot",
   "packages_delivered_this_week": 0,
   "accrued_wages": 0.0,

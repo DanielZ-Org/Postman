@@ -225,6 +225,31 @@ const (
 	loanReferenceID       = "loan-1"
 )
 
+// Employee mood and retention (SPEC 10, decided 16.15): mood runs 0-100 starting at
+// 100. Tuesday payroll moves every employee's mood: +5 when the payroll left cash
+// non-negative, -25 when it left cash negative (floored at 0; +5 capped at 100).
+// After the update each ready employee at or below the quit threshold rolls a 20%
+// chance to leave; mid-run employees are skipped and re-checked next payroll.
+const (
+	moodInitial           = 100
+	moodMax               = 100
+	moodPayrollUp         = 5
+	moodPayrollDown       = 25
+	moodQuitThreshold     = 30
+	moodQuitChancePercent = 20
+)
+
+// clampMood keeps a mood movement inside the 0..moodMax range.
+func clampMood(mood int) int {
+	if mood < 0 {
+		return 0
+	}
+	if mood > moodMax {
+		return moodMax
+	}
+	return mood
+}
+
 // Rent misses (SPEC 4.2, decided 16.10): the first missed payment adds a one-off 20%
 // late fee deducted regardless of cash (cash may go negative); the fee does not
 // escalate further, and the second miss terminates the contract.

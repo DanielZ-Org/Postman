@@ -46,7 +46,7 @@ interface Emp {
   name: string
   speed_trait: 'snail' | 'chicken' | 'cheetah'
   skills: string[]
-  mood: 'happy' | 'neutral' | 'unhappy'
+  mood: number
   current_delivery_mode: 'foot'
   packages_delivered_this_week: number
   accrued_wages: number
@@ -360,8 +360,18 @@ function settlePayroll(state: MockState, atMs: number): void {
   const total = state.employees.reduce((sum, e) => sum + e.accrued_wages, 0)
   if (total > 0) {
     addTxn(state, 'employee_wages', -total, 'Tuesday payroll', null, atMs)
-    for (const e of state.employees) e.accrued_wages = 0
   }
+  // Mood settles with the payroll (SPEC 10, decided 16.15): +5, or -25 when the
+  // payroll left cash negative; afterwards each ready employee at or below 30 rolls a
+  // 20% chance to quit (mid-run employees wait for the next payroll).
+  const delta = state.cash < 0 ? -25 : 5
+  for (const e of state.employees) {
+    e.mood = Math.min(100, Math.max(0, e.mood + delta))
+    e.accrued_wages = 0
+  }
+  state.employees = state.employees.filter(
+    (e) => !(e.status === 'ready' && e.mood <= 30 && Math.random() < 0.2),
+  )
 }
 
 function chargeRent(state: MockState, atMs: number): void {
@@ -889,7 +899,7 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
         name: HIRE_NAMES[(state.nextEmp - 1) % HIRE_NAMES.length],
         speed_trait: traitCycle[(state.totalHires - 1) % 3],
         skills: [],
-        mood: 'neutral',
+        mood: 100,
         current_delivery_mode: 'foot',
         packages_delivered_this_week: 0,
         accrued_wages: 0,

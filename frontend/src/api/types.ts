@@ -4,7 +4,6 @@ export type DestinationType = 'local' | 'far'
 export type PackageStatus = 'stored' | 'assigned' | 'out_for_delivery' | 'delivered'
 export type EmployeeStatus = 'ready' | 'packing' | 'out_for_delivery'
 export type SpeedTrait = 'snail' | 'chicken' | 'cheetah'
-export type Mood = 'happy' | 'neutral' | 'unhappy'
 export type DeliveryMode = 'foot' | 'bicycle' | 'car'
 export type PlayerTrait = 'financial' | 'storage' | 'logistics'
 export type OfficeType = 'small' | 'large'
@@ -95,7 +94,7 @@ export interface Employee {
   name: string
   speed_trait: SpeedTrait | string
   skills: string[]
-  mood: Mood | string
+  mood: number
   current_delivery_mode: DeliveryMode | string
   packages_delivered_this_week: number
   accrued_wages: number

@@ -133,7 +133,7 @@ export function makeEmployee(overrides: Partial<Employee> = {}): Employee {
     name: 'Test Courier',
     speed_trait: 'snail',
     skills: [],
-    mood: 'neutral',
+    mood: 100,
     current_delivery_mode: 'foot',
     packages_delivered_this_week: 0,
     accrued_wages: 0,

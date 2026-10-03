@@ -1,5 +1,7 @@
 package game
 
+import "encoding/json"
+
 // Employee operational states (SPEC 7.4): ready -> packing -> out_for_delivery ->
 // ready. Only the backend transitions these; a requested assignment is valid solely
 // when every rule passes.
@@ -9,13 +11,11 @@ const (
 	EmployeeOutForDelivery = "out_for_delivery"
 )
 
-// Employee delivery modes (SPEC 9) and mood defaults (SPEC 7.3/7.4).
+// Employee delivery modes (SPEC 9).
 const (
 	ModeFoot    = "foot"
 	ModeBicycle = "bicycle"
 	ModeCar     = "car"
-
-	MoodNeutral = "neutral"
 )
 
 // Employee skills (SPEC 7.2): an extensible list; vehicle modes are gated on the
@@ -27,13 +27,15 @@ const (
 
 // Employee is one delivery worker. Wages accrue per delivered package and settle at
 // the weekly payroll; PackagesDeliveredThisWeek and RunsToday reset on their own
-// schedules (payroll day and calendar day respectively).
+// schedules (payroll day and calendar day respectively). Mood is the 0-100 retention
+// value (SPEC 10, decided SPEC 16.15): payroll moves it, and a ready employee at or
+// below the quit threshold may leave.
 type Employee struct {
 	ID                        string   `json:"id"`
 	Name                      string   `json:"name"`
 	SpeedTrait                string   `json:"speed_trait"`
 	Skills                    []string `json:"skills"`
-	Mood                      string   `json:"mood"`
+	Mood                      int      `json:"mood"`
 	CurrentDeliveryMode       string   `json:"current_delivery_mode"`
 	PackagesDeliveredThisWeek int      `json:"packages_delivered_this_week"`
 	AccruedWages              int      `json:"accrued_wages"`
@@ -76,7 +78,7 @@ func newEmployee(id string, hireNumber int) *Employee {
 		Name:                      hireNames[(hireNumber-1)%len(hireNames)],
 		SpeedTrait:                speedTraits[(hireNumber-1)%len(speedTraits)],
 		Skills:                    skills,
-		Mood:                      MoodNeutral,
+		Mood:                      moodInitial,
 		CurrentDeliveryMode:       ModeFoot,
 		PackagesDeliveredThisWeek: 0,
 		AccruedWages:              0,
@@ -98,4 +100,34 @@ type hiringState struct {
 // counter (SPEC 8): hire #n costs n * £50 regardless of current headcount.
 func nextHiringFee(totalHires int) int {
 	return hireBaseFee + totalHires*hireFeeStep
+}
+
+// UnmarshalJSON keeps old saves loadable after mood became a number (SPEC 10): earlier
+// versions persisted a fixed label ("neutral" - the only value ever written), so a
+// legacy string decodes to the initial mood while numeric values parse as-is and a
+// missing field defaults to the initial mood. The next save writes the number back.
+func (e *Employee) UnmarshalJSON(data []byte) error {
+	type employeeAlias Employee
+	aux := struct {
+		Mood json.RawMessage `json:"mood"`
+		*employeeAlias
+	}{employeeAlias: (*employeeAlias)(e)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	e.Mood = moodInitial
+	if len(aux.Mood) == 0 || string(aux.Mood) == "null" {
+		return nil
+	}
+	var numeric int
+	if err := json.Unmarshal(aux.Mood, &numeric); err == nil {
+		e.Mood = numeric
+		return nil
+	}
+	// Legacy label (e.g. "neutral"): keep the initial mood. A malformed value fails.
+	var label string
+	if err := json.Unmarshal(aux.Mood, &label); err != nil {
+		return err
+	}
+	return nil
 }
