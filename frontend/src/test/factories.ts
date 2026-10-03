@@ -62,6 +62,7 @@ export function makeOfficeOffer(overrides: Partial<OfficeOffer> = {}): OfficeOff
     bicycle_capacity: 5,
     vehicle_capacity: 1,
     accepted_package_sizes: ['small', 'medium'],
+    upgrade_cost_pence: 0,
     ...overrides,
   }
 }
@@ -250,6 +251,7 @@ export function makeGameApi(overrides: Partial<GameApi> = {}): GameApi {
     skipToNextOpening: mockFn<GameApi['skipToNextOpening']>(),
     selectOffice: mockFn<GameApi['selectOffice']>(true),
     hireEmployee: mockFn<GameApi['hireEmployee']>(true),
+    upgradeOffice: mockFn<GameApi['upgradeOffice']>(true),
     assignDelivery: mockFn<GameApi['assignDelivery']>(true),
     repayLoan: mockFn<GameApi['repayLoan']>(true),
     resetGame: mockFn<GameApi['resetGame']>(true),

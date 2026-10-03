@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { GameApi } from '../hooks/useGame'
 import type { Package } from '../api/types'
 import { formatGameDateTime, formatMoney } from '../lib/format'
@@ -69,6 +69,41 @@ function CourierCard({ game }: { game: GameApi }) {
   )
 }
 
+// UpgradeControl offers the small-to-large office upgrade (SPEC 4.4) while the catalogue
+// reports a non-zero upgrade_cost_pence. Two-step confirm mirrors the office-select button;
+// the button is disabled while cash is below the fee.
+function UpgradeControl({ game, cost }: { game: GameApi; cost: number }) {
+  const [confirming, setConfirming] = useState(false)
+  const cash = game.state?.player.cash ?? 0
+  const disabled = cash < cost
+
+  const handleUpgrade = () => {
+    if (!confirming) {
+      setConfirming(true)
+      return
+    }
+    setConfirming(false)
+    void game.upgradeOffice()
+  }
+
+  return (
+    <div className="upgrade-control">
+      <p className="muted upgrade-note">
+        More storage, staff and vehicle slots. The large rent applies from the next rent charge.
+      </p>
+      <button
+        type="button"
+        className={`btn ${confirming ? 'btn-confirm' : 'btn-primary'}`}
+        onClick={handleUpgrade}
+        disabled={disabled}
+      >
+        {confirming ? `Confirm — pay ${formatMoney(cost)}` : `Upgrade to large office (${formatMoney(cost)})`}
+      </button>
+      {disabled && <p className="field-hint">Not enough cash for the upgrade.</p>}
+    </div>
+  )
+}
+
 export function OverviewPanel({ game }: { game: GameApi }) {
   const state = game.state
   const employeeNameById = useMemo(() => {
@@ -98,6 +133,9 @@ export function OverviewPanel({ game }: { game: GameApi }) {
   const office = state.office
   const ops = state.operations
   const fin = state.finance
+  // SPEC 4.4: the catalogue carries the same fee on every entry — 10000 only while the
+  // active office is small, 0 otherwise.
+  const upgradeCost = game.offices[0]?.upgrade_cost_pence ?? 0
 
   const storagePct =
     office && office.storage_capacity > 0
@@ -223,6 +261,36 @@ export function OverviewPanel({ game }: { game: GameApi }) {
               <span className="stat-value">{formatMoney(fin.accrued_wages)}</span>
             </div>
           </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Head office</h2>
+            {game.office && (
+              <span className="office-type-chip">{game.office.type === 'large' ? 'Large' : 'Small'}</span>
+            )}
+          </div>
+          {office ? (
+            <div className="office-summary">
+              <div className="stat-row">
+                <div className="stat-card">
+                  <span className="stat-label">Storage</span>
+                  <span className="stat-value">
+                    {office.storage_used}/{office.storage_capacity}
+                  </span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-label">Staff</span>
+                  <span className="stat-value">
+                    {office.employee_count}/{office.employee_capacity}
+                  </span>
+                </div>
+              </div>
+              {upgradeCost > 0 && <UpgradeControl game={game} cost={upgradeCost} />}
+            </div>
+          ) : (
+            <p className="empty-state">No head office selected.</p>
+          )}
         </section>
 
         <section className="panel">

@@ -271,3 +271,165 @@ func TestConcurrentSelectionOnlyOneSucceeds(t *testing.T) {
 		t.Errorf("transaction = %+v, want category office_down_payment amount -%d reference_id %s", tr, off.DownPayment, off.ID)
 	}
 }
+
+// ---- Office upgrade (SPEC 4.4, decided 16.14) ----
+
+// TestUpgradeOfficeSmallToLarge verifies the atomic upgrade: caps and rent switch to the large
+// values while used storage is kept, and exactly one "upgrade" transaction debits 10000p.
+func TestUpgradeOfficeSmallToLarge(t *testing.T) {
+	s := newStateAt(t, "1980-02-01T09:00:00")
+	office := selectSmall(t, s)
+	office.Storage.Used = 7
+	addStoredPackage(s, "pkg-upg", "medium", "standard",
+		mustParseTime(t, "1980-02-01T09:00:00"), mustParseTime(t, "1980-02-01T17:00:00"))
+	cash := s.cash
+	due, id, dp, prepaid := office.NextRentDue, office.ID, office.DownPayment, office.RentPrepaidWeeks
+	txnsBefore := len(s.transactions)
+
+	up, gotCash, err := s.UpgradeOffice()
+	if err != nil {
+		t.Fatalf("UpgradeOffice: %v", err)
+	}
+	if up.Type != "large" {
+		t.Errorf("type = %q, want large", up.Type)
+	}
+	if up.Storage.Base != 150 || up.Storage.Max != 250 || up.Storage.Used != 7 {
+		t.Errorf("storage = base %d max %d used %d, want 150/250 with used kept (SPEC 4.4)",
+			up.Storage.Base, up.Storage.Max, up.Storage.Used)
+	}
+	if up.EmployeeCapacity != 7 || up.VehicleCapacity != 2 {
+		t.Errorf("employee/vehicle capacity = %d/%d, want 7/2", up.EmployeeCapacity, up.VehicleCapacity)
+	}
+	// SPEC 4.4 lists only storage, employee and vehicle capacity as switching: bicycle
+	// capacity stays at the small-office value.
+	if up.BicycleCapacity != 5 {
+		t.Errorf("bicycle capacity = %d, want unchanged 5 (SPEC 4.4 lists no bicycle switch)", up.BicycleCapacity)
+	}
+	if up.WeeklyRent != 7500 {
+		t.Errorf("weekly rent = %d, want large rent 7500p", up.WeeklyRent)
+	}
+	if up.NextRentDue != due || up.ID != id || up.DownPayment != dp || up.RentPrepaidWeeks != prepaid {
+		t.Errorf("rent due/id/down payment/prepaid = %s/%s/%d/%d, want unchanged %s/%s/%d/%d",
+			up.NextRentDue, up.ID, up.DownPayment, up.RentPrepaidWeeks, due, id, dp, prepaid)
+	}
+	if gotCash != cash-10000 || s.cash != cash-10000 {
+		t.Errorf("cash = %d/%d, want %d", gotCash, s.cash, cash-10000)
+	}
+	if len(s.transactions) != txnsBefore+1 {
+		t.Fatalf("transactions = %d, want %d (one upgrade txn)", len(s.transactions), txnsBefore+1)
+	}
+	tr := s.transactions[len(s.transactions)-1]
+	if tr.Category != CategoryUpgrade || tr.Amount != -10000 || tr.ReferenceID != id {
+		t.Errorf("txn = %+v, want upgrade -10000 ref %s", tr, id)
+	}
+	if len(s.packages) != 1 {
+		t.Errorf("packages = %d, want 1 (unaffected by the upgrade)", len(s.packages))
+	}
+}
+
+// TestUpgradeOfficeNextRentUsesLargeRent verifies SPEC 4.4: the already-scheduled rent charge
+// keeps its due date but bills the large-office rent.
+func TestUpgradeOfficeNextRentUsesLargeRent(t *testing.T) {
+	s := newStateAt(t, "1980-02-01T09:00:00")
+	office := selectSmall(t, s)
+	if _, _, err := s.UpgradeOffice(); err != nil {
+		t.Fatalf("UpgradeOffice: %v", err)
+	}
+	if office.NextRentDue != "1980-02-29T00:00:00" {
+		t.Fatalf("next rent due = %s, want unchanged 1980-02-29", office.NextRentDue)
+	}
+
+	s.processRentLocked(mustParseTime(t, "1980-02-29T00:00:00"))
+
+	tr := s.transactions[len(s.transactions)-1]
+	if tr.Category != CategoryRent || tr.Amount != -7500 {
+		t.Errorf("rent txn = %+v, want -7500p large rent", tr)
+	}
+}
+
+// TestUpgradeOfficeValidation verifies the SPEC 4.4 validation order and that every failure
+// leaves state unchanged: no office / terminated / game over map to ErrNoActiveOffice (the
+// SPEC folds game over into NO_OFFICE), an already-large office to ErrUpgradeNotAvailable,
+// and low cash to InsufficientFundsError{10000, cash}.
+func TestUpgradeOfficeValidation(t *testing.T) {
+	t.Run("no office", func(t *testing.T) {
+		s := newStateAt(t, "1980-02-01T09:00:00")
+		if _, _, err := s.UpgradeOffice(); !errors.Is(err, ErrNoActiveOffice) {
+			t.Errorf("err = %v, want ErrNoActiveOffice", err)
+		}
+	})
+
+	t.Run("terminated contract", func(t *testing.T) {
+		s := newStateAt(t, "1980-02-01T09:00:00")
+		office := selectSmall(t, s)
+		office.ContractStatus = ContractTerminated
+		if _, _, err := s.UpgradeOffice(); !errors.Is(err, ErrNoActiveOffice) {
+			t.Errorf("err = %v, want ErrNoActiveOffice", err)
+		}
+	})
+
+	t.Run("game over folds into ErrNoActiveOffice", func(t *testing.T) {
+		s := newStateAt(t, "1980-02-01T09:00:00")
+		selectSmall(t, s)
+		s.status = GameStatusGameOver
+		if _, _, err := s.UpgradeOffice(); !errors.Is(err, ErrNoActiveOffice) {
+			t.Errorf("err = %v, want ErrNoActiveOffice (SPEC 4.4 NO_OFFICE)", err)
+		}
+	})
+
+	t.Run("already large", func(t *testing.T) {
+		s := newStateAt(t, "1980-02-01T09:00:00")
+		selectSmall(t, s)
+		if _, _, err := s.UpgradeOffice(); err != nil {
+			t.Fatalf("first upgrade: %v", err)
+		}
+		cash, txns := s.cash, len(s.transactions)
+		if _, _, err := s.UpgradeOffice(); !errors.Is(err, ErrUpgradeNotAvailable) {
+			t.Errorf("err = %v, want ErrUpgradeNotAvailable", err)
+		}
+		if s.cash != cash || len(s.transactions) != txns {
+			t.Errorf("state mutated: cash %d txns %d, want unchanged", s.cash, len(s.transactions))
+		}
+	})
+
+	t.Run("insufficient funds", func(t *testing.T) {
+		s := newStateAt(t, "1980-02-01T09:00:00")
+		office := selectSmall(t, s)
+		s.cash = 9999
+		txns := len(s.transactions)
+		_, _, err := s.UpgradeOffice()
+		var ife *InsufficientFundsError
+		if !errors.As(err, &ife) || ife.Required != 10000 || ife.Available != 9999 {
+			t.Fatalf("err = %v, want InsufficientFundsError{10000, 9999}", err)
+		}
+		if office.Type != "small" || s.cash != 9999 || len(s.transactions) != txns {
+			t.Errorf("state mutated: type %q cash %d txns %d", office.Type, s.cash, len(s.transactions))
+		}
+	})
+}
+
+// TestUpgradeCostPence verifies the UI field source (SPEC 4.4): 10000 only while an active
+// small head office exists, 0 otherwise.
+func TestUpgradeCostPence(t *testing.T) {
+	s := newStateAt(t, "1980-02-01T09:00:00")
+	if got := s.UpgradeCostPence(); got != 0 {
+		t.Errorf("cost without office = %d, want 0", got)
+	}
+	selectSmall(t, s)
+	if got := s.UpgradeCostPence(); got != 10000 {
+		t.Errorf("cost with active small = %d, want 10000", got)
+	}
+	if _, _, err := s.UpgradeOffice(); err != nil {
+		t.Fatalf("UpgradeOffice: %v", err)
+	}
+	if got := s.UpgradeCostPence(); got != 0 {
+		t.Errorf("cost after upgrade = %d, want 0", got)
+	}
+
+	s2 := newStateAt(t, "1980-02-01T09:00:00")
+	office2 := selectSmall(t, s2)
+	office2.ContractStatus = ContractTerminated
+	if got := s2.UpgradeCostPence(); got != 0 {
+		t.Errorf("cost with terminated contract = %d, want 0", got)
+	}
+}

@@ -28,8 +28,8 @@ type catalogueStorageJSON struct {
 }
 
 // catalogueOfficeJSON is the wire shape for one office option in GET /api/v1/offices. It contains
-// only static catalogue fields — no runtime fields (is_head_office, next_rent_due, storage.current/
-// used, contract_status, missed_rent_payments).
+// only static catalogue fields plus the informational upgrade_cost_pence — no runtime fields
+// (is_head_office, next_rent_due, storage.current/used, contract_status, missed_rent_payments).
 type catalogueOfficeJSON struct {
 	ID                   string               `json:"id"`
 	Type                 string               `json:"type"`
@@ -41,6 +41,7 @@ type catalogueOfficeJSON struct {
 	BicycleCapacity      int                  `json:"bicycle_capacity"`
 	VehicleCapacity      int                  `json:"vehicle_capacity"`
 	AcceptedPackageSizes []string             `json:"accepted_package_sizes"`
+	UpgradeCostPence     int                  `json:"upgrade_cost_pence"`
 }
 
 // officesResponse is the wire shape for GET /api/v1/offices: a single "offices" wrapper.
@@ -48,7 +49,7 @@ type officesResponse struct {
 	Offices []catalogueOfficeJSON `json:"offices"`
 }
 
-func catalogueFrom(def game.OfficeDefinition) catalogueOfficeJSON {
+func catalogueFrom(def game.OfficeDefinition, upgradeCostPence int) catalogueOfficeJSON {
 	return catalogueOfficeJSON{
 		ID:                   def.ID,
 		Type:                 def.Type,
@@ -60,6 +61,7 @@ func catalogueFrom(def game.OfficeDefinition) catalogueOfficeJSON {
 		BicycleCapacity:      def.BicycleCapacity,
 		VehicleCapacity:      def.VehicleCapacity,
 		AcceptedPackageSizes: def.AcceptedPackageSizes,
+		UpgradeCostPence:     upgradeCostPence,
 	}
 }
 
@@ -118,7 +120,9 @@ func runtimeFrom(o *game.RuntimeOffice) runtimeOfficeJSON {
 }
 
 // handleList serves GET /api/v1/offices with the canonical catalogue wrapper in deterministic order.
-// It is read-only: it does not mutate selected-office state, cash, or transactions. Unsupported
+// It is read-only: it does not mutate selected-office state, cash, or transactions. Every entry
+// carries the informational upgrade_cost_pence (SPEC 4.4): 10000 while the active office is small,
+// 0 otherwise — the same value on each entry, so the UI can offer the upgrade button. Unsupported
 // methods are rejected (405 METHOD_NOT_ALLOWED, JSON envelope).
 func (h *officeHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -126,9 +130,10 @@ func (h *officeHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	upgradeCost := h.state.UpgradeCostPence()
 	resp := officesResponse{Offices: make([]catalogueOfficeJSON, 0)}
 	for _, def := range game.OfficeDefinitions() {
-		resp.Offices = append(resp.Offices, catalogueFrom(def))
+		resp.Offices = append(resp.Offices, catalogueFrom(def, upgradeCost))
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -203,6 +208,64 @@ func (h *officeHandler) writeSelectionError(w http.ResponseWriter, err error) {
 		// Unreachable: SelectOffice returns exactly one of the error kinds above. Emit a JSON 500
 		// (never plain text) to keep the Office API contract intact in an impossible state.
 		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected office selection failure", nil)
+	}
+}
+
+// upgradeResponse is the wire shape for a successful POST /api/v1/offices/upgrade: the upgraded
+// runtime office plus the resulting cash balance (integer pence) — same shape as selectResponse.
+type upgradeResponse struct {
+	Office      runtimeOfficeJSON `json:"office"`
+	CashBalance int               `json:"cash_balance"`
+}
+
+// handleUpgrade serves POST /api/v1/offices/upgrade (SPEC 4.4). The endpoint takes no request
+// body: an empty body or an empty JSON object is accepted, anything else is a malformed transport
+// rejection (400) before any business validation. Business rules and atomicity live in the game
+// layer; unsupported methods are rejected without mutating state.
+func (h *officeHandler) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	// (1) malformed transport: no body (or only an empty object) is allowed.
+	body, code := readBody(r, true) // empty body permitted
+	if code != "" {
+		writeAPIError(w, http.StatusBadRequest, code, "request body must be a single valid JSON value", nil)
+		return
+	}
+	if len(body) > 0 {
+		obj, ok := decodeObject(body)
+		if !ok || len(obj) != 0 {
+			writeAPIError(w, http.StatusBadRequest, "INVALID_REQUEST", "offices/upgrade takes no request body", nil)
+			return
+		}
+	}
+
+	office, cash, err := h.state.UpgradeOffice()
+	if err != nil {
+		h.writeUpgradeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, upgradeResponse{Office: runtimeFrom(office), CashBalance: cash})
+}
+
+// writeUpgradeError maps an upgrade failure to the canonical codes of SPEC 4.4:
+// NO_OFFICE (404), UPGRADE_NOT_AVAILABLE (409), INSUFFICIENT_FUNDS (409 with details).
+func (h *officeHandler) writeUpgradeError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, game.ErrNoActiveOffice):
+		writeAPIError(w, http.StatusNotFound, "NO_OFFICE", "no active head office contract", nil)
+	case errors.Is(err, game.ErrUpgradeNotAvailable):
+		writeAPIError(w, http.StatusConflict, "UPGRADE_NOT_AVAILABLE", "the head office is already the large office", nil)
+	default:
+		var ife *game.InsufficientFundsError
+		if errors.As(err, &ife) {
+			writeAPIError(w, http.StatusConflict, "INSUFFICIENT_FUNDS", "insufficient cash for the office upgrade", map[string]any{"required": ife.Required, "available": ife.Available})
+			return
+		}
+		// Unreachable: UpgradeOffice returns exactly one of the error kinds above.
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "unexpected office upgrade failure", nil)
 	}
 }
 

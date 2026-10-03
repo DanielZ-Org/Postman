@@ -149,7 +149,9 @@ describe('api.getOffices', () => {
   it('parses offices from {offices:[...]}', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(200, { offices: [makeOffice()] })),
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, { offices: [{ ...makeOffice(), upgrade_cost_pence: 0 }] }),
+      ),
     )
     const offices = await api.getOffices()
     expect(offices).toHaveLength(1)
@@ -174,6 +176,7 @@ describe('api.getOffices', () => {
               bicycle_capacity: 5,
               vehicle_capacity: 1,
               accepted_package_sizes: ['small', 'medium'],
+              upgrade_cost_pence: 0,
             },
           ],
         }),
@@ -380,5 +383,15 @@ describe('mutation bodies', () => {
     expect(url).toContain('/finance/repay')
     expect(init.method).toBe('POST')
     expect(JSON.parse(String(init.body))).toEqual({ amount: 25000 })
+  })
+
+  it('POST /offices/upgrade sends an empty object body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { cash_balance: 55000 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await api.upgradeOffice()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/offices/upgrade')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({})
   })
 })

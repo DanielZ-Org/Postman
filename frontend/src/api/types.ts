@@ -65,6 +65,9 @@ export interface OfficeOffer {
   bicycle_capacity: number
   vehicle_capacity: number
   accepted_package_sizes: PackageSize[] | string[]
+  // SPEC 4.4: 10000 while the active office is small, 0 otherwise — same value on
+  // every catalogue entry.
+  upgrade_cost_pence: number
 }
 
 export interface SelectOfficeResult {

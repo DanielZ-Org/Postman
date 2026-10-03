@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { OverviewPanel } from './OverviewPanel'
-import { makeGameApi, makePackage } from '../test/factories'
+import { formatMoney } from '../lib/format'
+import { makeGameState, makeGameApi, makeOfficeOffer, makePackage } from '../test/factories'
 
 describe('OverviewPanel (delivery flow)', () => {
   it('shows all four pipeline stages with counts', () => {
@@ -57,5 +58,50 @@ describe('OverviewPanel (delivery flow)', () => {
   it('shows storage meter units', () => {
     render(<OverviewPanel game={makeGameApi()} />)
     expect(screen.getByText('6/100 units')).toBeInTheDocument()
+  })
+})
+
+describe('OverviewPanel head office upgrade (SPEC 4.4)', () => {
+  it('shows the head office summary without an upgrade button when the fee is 0', () => {
+    render(<OverviewPanel game={makeGameApi()} />)
+    expect(screen.getByRole('heading', { name: 'Head office' })).toBeInTheDocument()
+    expect(screen.getByText('Small')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Upgrade to large office/ })).not.toBeInTheDocument()
+  })
+
+  it('upgrades after a two-step confirm', () => {
+    const upgradeOffice = vi.fn(async () => true)
+    render(
+      <OverviewPanel
+        game={makeGameApi({
+          offices: [makeOfficeOffer({ upgrade_cost_pence: 10000 })],
+          upgradeOffice,
+        })}
+      />,
+    )
+    const button = screen.getByRole('button', { name: /Upgrade to large office/ })
+    expect(button).toHaveTextContent(formatMoney(10000))
+
+    // First click only arms the confirmation.
+    fireEvent.click(button)
+    expect(upgradeOffice).not.toHaveBeenCalled()
+    const confirm = screen.getByRole('button', { name: /Confirm/ })
+    expect(confirm).toHaveTextContent(formatMoney(10000))
+
+    fireEvent.click(confirm)
+    expect(upgradeOffice).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables the upgrade while cash is below the fee', () => {
+    render(
+      <OverviewPanel
+        game={makeGameApi({
+          state: makeGameState({ player: { id: 'p', cash: 5000, trait: 'financial' } }),
+          offices: [makeOfficeOffer({ upgrade_cost_pence: 10000 })],
+        })}
+      />,
+    )
+    expect(screen.getByRole('button', { name: /Upgrade to large office/ })).toBeDisabled()
+    expect(screen.getByText('Not enough cash for the upgrade.')).toBeInTheDocument()
   })
 })

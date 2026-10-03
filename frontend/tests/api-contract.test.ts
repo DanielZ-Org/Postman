@@ -475,6 +475,65 @@ describe('POST /finance/repay', () => {
   })
 })
 
+describe('POST /offices/upgrade (SPEC 4.4)', () => {
+  async function upgradeCosts(): Promise<number[]> {
+    const body = (await readJson(await apiFetch('/offices'))) as { offices?: Record<string, unknown>[] }
+    return (body.offices ?? []).map((o) => Number(o.upgrade_cost_pence))
+  }
+
+  it('reports the fee, performs the upgrade, then reports 0 again', async () => {
+    expect(await upgradeCosts()).toEqual([0, 0])
+
+    await post('/offices/select', { office_id: 'office-small-01' })
+    expect(await upgradeCosts()).toEqual([10000, 10000])
+
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(200)
+    const body = (await readJson(res)) as Record<string, unknown>
+    const office = body.office as Record<string, unknown>
+    expect(office.type).toBe('large')
+    expect(office.employee_capacity).toBe(7)
+    expect(office.vehicle_capacity).toBe(2)
+    expect(office.weekly_rent).toBe(7500)
+    expect(body.cash_balance).toBe(55000) // 100000 - 35000 - 10000 pence
+
+    const runtime = (await readJson(await apiFetch('/office'))) as Record<string, unknown>
+    expect((runtime.office as Record<string, unknown>).type).toBe('large')
+
+    const txns = (await readJson(await apiFetch('/finance/transactions'))) as {
+      transactions: Record<string, unknown>[]
+    }
+    const upgrade = txns.transactions.find((t) => t.category === 'upgrade')
+    expect(upgrade?.amount).toBe(-10000)
+
+    expect(await upgradeCosts()).toEqual([0, 0])
+  })
+
+  it('rejects a second upgrade with 409 UPGRADE_NOT_AVAILABLE', async () => {
+    await post('/offices/select', { office_id: 'office-small-01' })
+    await post('/offices/upgrade')
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(409)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('UPGRADE_NOT_AVAILABLE')
+  })
+
+  it('returns 404 NO_OFFICE without an active contract', async () => {
+    const res = await post('/offices/upgrade')
+    expect(res.status).toBe(404)
+    expect(((await readJson(res)) as ErrorBody).error?.code).toBe('NO_OFFICE')
+  })
+
+  it('rejects GET with 405 and a non-empty body with 400', async () => {
+    const get = await apiFetch('/offices/upgrade')
+    expect(get.status).toBe(405)
+    expect(((await readJson(get)) as ErrorBody).error?.code).toBe('METHOD_NOT_ALLOWED')
+
+    const bad = await post('/offices/upgrade', { amount: 100 })
+    expect(bad.status).toBe(400)
+    expect(((await readJson(bad)) as ErrorBody).error?.code).toBe('INVALID_REQUEST')
+  })
+})
+
 describe('clock controls', () => {
   it('accepts speeds 1, 2, 3 and rejects others', async () => {
     for (const speed of [1, 2, 3]) {

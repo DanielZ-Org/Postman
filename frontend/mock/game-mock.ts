@@ -694,7 +694,16 @@ function financeResponse(state: MockState, nowMs: number) {
   }
 }
 
+// upgradeCostPence mirrors SPEC 4.4: 10000 while an active small head office is under
+// contract, 0 otherwise (no office, terminated, already large, game over).
+function upgradeCostPence(state: MockState): number {
+  if (state.status === 'game_over') return 0
+  if (!state.office || state.office.contract_status !== 'active') return 0
+  return state.office.type === 'small' ? 10000 : 0
+}
+
 function officeOffers(state: MockState) {
+  const upgrade = upgradeCostPence(state)
   return OFFERS.map((offer) => {
     const owned = state.office && state.office.id === offer.id ? state.office : null
     return {
@@ -706,6 +715,7 @@ function officeOffers(state: MockState) {
         ...offer.storage,
         used_units: owned ? storageUsed(state) : 0,
       },
+      upgrade_cost_pence: upgrade,
     }
   })
 }
@@ -845,6 +855,55 @@ async function handle(state: MockState, req: IncomingMessage, res: ServerRespons
       for (let i = 0; i < 6; i++) spawnPackage(state, now0)
       state.lastGenMs = now0
       respond(200, gameResponse(state, now0))
+      return true
+    }
+    // Office upgrade (SPEC 4.4): POST with no body; 10000p small -> large, atomic.
+    if (path === '/api/v1/offices/upgrade') {
+      if (method !== 'POST') {
+        const err = httpError(405, 'METHOD_NOT_ALLOWED', 'method not allowed on this route')
+        respond(err.status, err.body)
+        return true
+      }
+      const body = await readJson(req)
+      for (const key of Object.keys(body)) {
+        const err = httpError(400, 'INVALID_REQUEST', 'offices/upgrade takes no request body', { field: key })
+        respond(err.status, err.body)
+        return true
+      }
+      if (state.status === 'game_over') {
+        const err = httpError(404, 'NO_OFFICE', 'no active head office contract')
+        respond(err.status, err.body)
+        return true
+      }
+      if (!state.office || state.office.contract_status !== 'active') {
+        const err = httpError(404, 'NO_OFFICE', 'no active head office contract')
+        respond(err.status, err.body)
+        return true
+      }
+      if (state.office.type !== 'small') {
+        const err = httpError(409, 'UPGRADE_NOT_AVAILABLE', 'the head office is already the large office')
+        respond(err.status, err.body)
+        return true
+      }
+      const cost = 10000 // down-payment difference 45000 - 35000 (SPEC 4.4)
+      if (state.cash < cost) {
+        const err = httpError(409, 'INSUFFICIENT_FUNDS', 'insufficient cash for the office upgrade', {
+          required: cost,
+          available: state.cash,
+        })
+        respond(err.status, err.body)
+        return true
+      }
+      const now = simulate(state)
+      state.office.type = 'large'
+      state.office.base_capacity = 150
+      state.office.current_capacity = 150
+      state.office.maximum_capacity = 250
+      state.office.employee_capacity = 7
+      state.office.vehicle_capacity = 2
+      state.office.weekly_rent = 7500
+      addTxn(state, 'upgrade', -cost, 'Head office upgraded to large', state.office.id, now)
+      respond(200, { office: runtimeOffice(state), cash_balance: state.cash })
       return true
     }
     if (method === 'GET' && path === '/api/v1/packages') {

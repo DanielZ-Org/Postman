@@ -43,6 +43,7 @@ func NewRouter(state *game.GameState) http.Handler {
 	oh := newOfficeHandler(state)
 	v1.HandleFunc("/offices", oh.handleList)
 	v1.HandleFunc("/offices/select", oh.handleSelect)
+	v1.HandleFunc("/offices/upgrade", oh.handleUpgrade)
 
 	// Packages, employees/hiring, delivery assignment (SPEC 5-9).
 	ph := newPackageHandler(state)

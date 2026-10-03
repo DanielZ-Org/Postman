@@ -182,6 +182,8 @@ export function useGame() {
 
   const hireEmployee = useCallback(() => runMutation(() => api.hireEmployee()), [runMutation])
 
+  const upgradeOffice = useCallback(() => runMutation(() => api.upgradeOffice()), [runMutation])
+
   const assignDelivery = useCallback(
     (employeeId: string, packageCount: number) =>
       runMutation(() => api.assignDelivery(employeeId, packageCount)),
@@ -246,6 +248,7 @@ export function useGame() {
     skipToNextOpening,
     selectOffice,
     hireEmployee,
+    upgradeOffice,
     assignDelivery,
     repayLoan,
     resetGame,

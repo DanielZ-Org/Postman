@@ -818,7 +818,7 @@ Recommended categories include:
 - `vehicle_fuel`
 - `vehicle_maintenance`
 - `loan_repayment`
-- future `upgrade`
+- `upgrade`
 
 ### Example finance statement
 

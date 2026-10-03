@@ -283,6 +283,7 @@ function parseOfficeOffer(value: unknown, path: string): OfficeOffer {
     bicycle_capacity: requireNumber(o, 'bicycle_capacity', path),
     vehicle_capacity: requireNumber(o, 'vehicle_capacity', path),
     accepted_package_sizes: requireStringArray(o, 'accepted_package_sizes', path),
+    upgrade_cost_pence: requireNumber(o, 'upgrade_cost_pence', path),
   }
 }
 
@@ -489,6 +490,13 @@ export const api = {
       body: JSON.stringify({ office_id: officeId }),
     })
     return parseSelectOffice(payload, officeId)
+  },
+
+  // upgradeOffice upgrades the active small head office to large for the fixed fee
+  // (SPEC 4.4). The endpoint takes no request body; the response carries the upgraded
+  // office and cash balance, but callers refresh from GET /game.
+  upgradeOffice(): Promise<unknown> {
+    return request<unknown>('/offices/upgrade', { method: 'POST', body: JSON.stringify({}) })
   },
 
   // getOffice reads the selected runtime office (SPEC 4.1). It returns null before a

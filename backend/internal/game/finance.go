@@ -33,6 +33,7 @@ const (
 	CategoryVehiclePurchase    = "vehicle_purchase"
 	CategoryVehicleFuel        = "vehicle_fuel"
 	CategoryVehicleMaintenance = "vehicle_maintenance"
+	CategoryUpgrade            = "upgrade"
 )
 
 // postTransactionLocked applies a money mutation: adjusts cash by amount and appends
